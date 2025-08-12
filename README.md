@@ -190,12 +190,13 @@ This setup process can be time-consuming on a Pi Zero. Be patient and ensure a s
     ```
 
 10. **Revert Swap Space & Reboot:**
+    After the intensive compilation is done, you can revert swap to a smaller default to reduce SD card wear.
     ```bash
-    sudo dphys-swapfile swapoff
-    sudo sed -i 's/CONF_SWAPSIZE=1024/CONF_SWAPSIZE=100/' /etc/dphys-swapfile
+    echo "CONF_SWAPSIZE=100" | sudo tee /etc/dphys-swapfile # Sets swap back to 100MB (default)
     sudo dphys-swapfile setup
     sudo dphys-swapfile swapon
-    sudo reboot
+    # You might need to reboot for changes to fully apply or if errors occur.
+    # sudo reboot
     ```
 
 11. **Verify I2C Sensor:** After rebooting and reconnecting via SSH, check if the VL6180X is detected at address `0x29`.
