@@ -1,816 +1,889 @@
-# **Build Your Own AI Ninja Robot (Upgraded with LCD Face & ToF Sensor)**
-
-
-
-This comprehensive tutorial guides you through building and programming an advanced, voice-controlled robot based on a Raspberry Pi Zero 2W. This upgraded version features a precise **VL6180X Time-of-Flight distance sensor** for obstacle detection and a **Waveshare 2-inch SPI LCD** that gives the robot an expressive, interactive face.
-
-The project integrates movement, sound, vision, and AI, all controllable through a web interface or by voice using Google's Gemini AI.
-
----
-
-## **Table of Contents**
-
-*   [1. Hardware Requirements](#1-hardware-requirements)
-*   [2. Hardware Assembly (Corrected Pinout)](#2-hardware-assembly-corrected-pinout)
-*   [3. Final GPIO Pinout Configuration](#3-final-gpio-pinout-configuration)
-*   [4. Software Setup on Raspberry Pi](#4-software-setup-on-raspberry-pi)
-*   [5. Code Implementation (Updated)](#5-code-implementation-updated)
-*   [6. Running the Application](#6-running-the-application)
-*   [7. Using the Interface](#7-using-the-interface)
-*   [8. Troubleshooting](#8-troubleshooting)
-
----
-
-## **1. Hardware Requirements**
-
-*   **Core:**
-    *   Raspberry Pi Zero 2 W
-    *   **DFRobot IO Expansion HAT for Pi Zero**
-    *   DFRobot UPS HAT for Raspberry Pi Zero
-    *   16GB+ Micro SD Card (Class 10)
-*   **Sensors & Display:**
-    *   **Waveshare 2-inch SPI LCD Module** (240x320, ST7789V driver)
-    *   **VL6180X Distance Sensor** (I2C)
-*   **Actuators & Audio:**
-    *   SG90 180° Servos (x2)
-    *   SG90 360° Continuous Rotation Servos (x2)
-    *   Active Buzzer Module
-*   **Miscellaneous:**
-    *   Robot Chassis/Frame
-    *   Jumper Wires (Female-to-Female)
-    *   5V, >= 2.5A Micro USB Power Supply
-
----
-
-## **2. Hardware Assembly (Corrected Pinout)**
-
-**⚠️ IMPORTANT:** Always disconnect the power supply before connecting or disconnecting any components! The following instructions use the **exact labels printed on the DFRobot IO Expansion HAT**.
-
-1.  **Stack the HATs:**
-    *   First, mount the **DFRobot UPS HAT** onto the Raspberry Pi Zero's 40-pin GPIO header.
-    *   Next, carefully stack the **DFRobot IO Expansion HAT** on top of the UPS HAT.
-
-2.  **Connect the VL6180X Distance Sensor (I2C):**
-    *   Locate the dedicated 4-pin header labeled **`I2C`** on the IO Expansion HAT.
-    *   Connect the sensor directly to this port:
-        *   Sensor `VCC` -> HAT `I2C` port `V` pin
-        *   Sensor `GND` -> HAT `I2C` port `G` pin
-        *   Sensor `SCL` -> HAT `I2C` port `SCL` pin
-        *   Sensor `SDA` -> HAT `I2C` port `SDA` pin
-
-3.  **Connect the Waveshare 2-inch LCD (SPI):**
-    *   This uses both the dedicated `SPI` header and some of the digital `D` pins.
-    *   **SPI Header Connections:** Locate the header labeled **`SPI`**.
-        *   LCD `DIN` (Data In) -> HAT `SPI` header `MOSI` pin
-        *   LCD `CLK` (Clock) -> HAT `SPI` header `SCK` pin
-        *   LCD `CS` (Chip Select) -> HAT `SPI` header `CS` pin
-    *   **Digital Pin Connections:**
-        *   LCD `DC` (Data/Command) -> HAT `D25` pin
-        *   LCD `RST` (Reset) -> HAT `D17` pin
-        *   LCD `BL` (Backlight) -> HAT `D24` pin
-    *   **Power Connections:**
-        *   LCD `VCC` -> Any `3V3` pin on the HAT
-        *   LCD `GND` -> Any `GND` pin on the HAT
-
-4.  **Connect Servos:**
-    *   Connect the four servos to the dedicated 3-pin headers labeled **`S0`**, **`S1`**, **`S2`**, and **`S3`**.
-    *   Ensure correct polarity: Signal (Yellow/Orange wire), VCC (Red wire), GND (Brown/Black wire).
-    *   **Default Configuration:**
-        *   `S0`: Right Leg/Hip (180° SG90)
-        *   `S1`: Left Leg/Hip (180° SG90)
-        *   `S2`: Right Foot/Wheel (360° SG90)
-        *   `S3`: Left Foot/Wheel (360° SG90)
-
-5.  **Connect Buzzer:**
-    *   Connect the buzzer module to the digital pins:
-    *   `Signal/IO` -> HAT `D23` pin
-    *   `VCC/+` -> HAT `3V3` pin
-    *   `GND/-` -> HAT `GND` pin
-
-6.  **Final Assembly:** Mount all components onto your robot chassis. Organize wiring carefully.
-
----
-
-## **3. Final GPIO Pinout Configuration**
-
-This table summarizes the final, conflict-free pinout, referencing the HAT's physical labels.
-
-| Component | Pin Function | HAT Label | RPi GPIO (BCM) | Bus/Type |
-| :--- | :--- | :--- | :--- | :--- |
-| **VL6180X Sensor**| SCL | `I2C` Header `SCL` | 3 | I2C |
-| | SDA | `I2C` Header `SDA` | 2 | I2C |
-| **Waveshare LCD** | DIN | `SPI` Header `MOSI` | 10 | SPI |
-| | CLK | `SPI` Header `SCK` | 11 | SPI |
-| | CS | `SPI` Header `CS` | 8 | SPI |
-| | DC | `D25` | 25 | GPIO |
-| | RST | `D17` | 17 | GPIO |
-| | BL | `D24` | 24 | GPIO |
-| **Buzzer** | Signal | `D23` | 23 | GPIO |
-| **Servos (x4)**| Signal | `S0`-`S3` | N/A | PWM |
-
----
-
-## **4. Software Setup on Raspberry Pi**
-
-This setup process can be time-consuming on a Pi Zero. Be patient and ensure a stable power supply.
-
-1.  **Install OS:** Use Raspberry Pi Imager to flash **Raspberry Pi OS (Legacy, 32-bit)** based on "Bullseye". This version has proven to have the best compatibility for these specific hardware libraries. Use the advanced options (⚙️) to pre-configure WiFi, SSH, and your user account.
-
-2.  **First Boot & Connect:** Boot the Pi and connect via SSH (`ssh your_username@your_pi_hostname.local`).
-
-3.  **System Update:**
-    ```bash
-    sudo apt update
-    sudo apt full-upgrade -y
-    sudo apt install -y curl git
-    sudo reboot
-    ```
-
-4.  **Enable Hardware Interfaces:**
-    *   Run the configuration tool: `sudo raspi-config`
-    *   Navigate to `3 Interface Options`.
-    *   Enable **`I3 I2C`**.
-    *   Enable **`I4 SPI`**.
-    *   (Optional) Enable **`I5 I2S`** if using the microphone.
-    *   Exit `raspi-config` and reboot.
-
-5.  **Install System Dependencies:**
-    ```bash
-    sudo apt install -y python3-dev python3-pip python3-venv build-essential libasound2-dev portaudio19-dev libportaudio2 libportaudiocpp0 ffmpeg flac libatlas-base-dev python3-smbus i2c-tools libopenjp2-7
-    ```
-
-6.  **Install Rust Compiler:** Required by a Gemini library dependency. **This step can take over an hour.**
-    Some Python libraries (like `pydantic-core`, a dependency for `google-generativeai`) require a Rust compiler. We'll use `rustup` to install the latest version.
-    **This step will take a considerable amount of time (30 mins to 1+ hour).**
-    ```bash
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-    ```
-    *   When prompted, choose `1) Proceed with installation (default)`.
-    *   After installation, configure your current shell:
-        ```bash
-        source "$HOME/.cargo/env"
-        ```
-    *   To make it permanent for future sessions, add it to your `.bashrc`:
-        ```bash
-        echo 'source "$HOME/.cargo/env"' >> ~/.bashrc
-        ```
-    *   Verify the installation (close and reopen terminal, or `source ~/.bashrc`):
-        ```bash
-        rustc --version
-        cargo --version
-        ```
-        You should see version numbers (e.g., `rustc 1.7X.X ...`).
-7.  **Increase Swap Space (Crucial):**
-    Compiling some Python packages (especially those with Rust components) is memory-intensive and can fail on the Pi Zero's limited RAM. We'll temporarily increase swap space.
-    ```bash
-    echo "CONF_SWAPSIZE=1024" | sudo tee /etc/dphys-swapfile # Sets swap to 1GB
-    # For 2GB swap (if your SD card is large enough and you encounter issues with 1GB):
-    # echo "CONF_SWAPSIZE=2048" | sudo tee /etc/dphys-swapfile
-    sudo dphys-swapfile setup
-    sudo dphys-swapfile swapon
-    ```
-    *   Verify swap (look for total swap around 1G or 2G):
-        ```bash
-        free -h
-        ```
-
-8.  **Create Project & Virtual Environment:**
-    ```bash
-    mkdir ~/NinjaRobot
-    cd ~/NinjaRobot
-    python3 -m venv .venv
-    source .venv/bin/activate
-    ```
-
-9.  **Install Python Libraries:** **This step will also take a very long time.**
-    ```bash
-    pip install --upgrade pip
-    pip install RPi.GPIO spidev Pillow numpy smbus smbus2 # For I2C communication, important for DFRobot HAT. Try smbus if smbus2 does not work
-    pip install google-generativeai SpeechRecognition gTTS pygame Flask google-cloud-speech
-    ```
-
-10. **Revert Swap Space & Reboot:**
-    After the intensive compilation is done, you can revert swap to a smaller default to reduce SD card wear.
-    ```bash
-    echo "CONF_SWAPSIZE=100" | sudo tee /etc/dphys-swapfile # Sets swap back to 100MB (default)
-    sudo dphys-swapfile setup
-    sudo dphys-swapfile swapon
-    # You might need to reboot for changes to fully apply or if errors occur.
-    # sudo reboot
-    ```
-
-11. **Verify I2C Sensor:** After rebooting and reconnecting via SSH, check if the VL6180X is detected at address `0x29`.
-    ```bash
-    sudo i2cdetect -y 1
-    ```
-    If `29` is not in the grid, double-check your wiring on the `I2C` header.
-
----
-
-## **5. Code Implementation (Updated)**
-
-Set up your project directory with the new and updated code files.
-
-### **File 1: `DFRobot_VL6180X.py`** (Sensor Library)
-
-This local library is required for the distance sensor.
-
-**Create the file:**
-```bash
-cd ~/NinjaRobot
-nano DFRobot_VL6180X.py
-```
-**Paste the following code:**
-```python
-# -*- coding: utf-8 -*
-""" file DFRobot_VL6180X.py
-  # DFRobot_VL6180X Class infrastructure, implementation of underlying methods
-  @copyright   Copyright (c) 2010 DFRobot Co.Ltd (http://www.dfrobot.com)
-  @licence     The MIT License (MIT)
-  @author      [yangfeng]<feng.yang@dfrobot.com> 
-  @version  V1.0
-  @date  2021-02-09
-  @get from https://www.dfrobot.com
-  @url https://github.com/DFRobot/DFRobot_VL6180X
+A Comprehensive Engineering Guide to the Upgraded NinjaRobot Platform with Gemini AI IntegrationPart 1: System Architecture and Design Rationale for the Upgraded NinjaRobot1.1. Project Overview and ObjectivesThis document provides a comprehensive engineering blueprint for the next-generation NinjaRobot, an advanced educational platform based on the Raspberry Pi Zero 2W. The primary objective is to evolve the existing robot by integrating sophisticated new hardware components, thereby expanding its capabilities in environmental interaction, user feedback, and artificial intelligence.The upgraded platform will incorporate three key enhancements:Visual Feedback: A Waveshare 2-inch SPI LCD module will be integrated to serve as the robot's "face," providing real-time status updates and displaying dynamic emotional expressions.Environmental Awareness: A VL6180X Time-of-Flight (ToF) distance sensor will be added, granting the robot precise short-range proximity detection for advanced obstacle avoidance and interaction.AI-Driven Expression: The existing Gemini AI integration will be deepened, enabling the AI to control the robot's facial expressions on the LCD in response to conversational context, creating a more engaging and intuitive user experience.This report details the system architecture, hardware assembly, software configuration, and provides a complete, refactored Python codebase to realize these objectives.1.2. Component-Level Functional BreakdownThe selection of each component is critical to achieving a balanced and capable robotic system. The following details the role and specifications of each hardware module.Core Compute: Raspberry Pi Zero 2WThe central processing unit for the NinjaRobot is the Raspberry Pi Zero 2W. Its quad-core ARM Cortex-A53 processor provides sufficient power for running the Python application stack, including the Flask web server and Gemini AI client, while its integrated Wi-Fi and Bluetooth capabilities are essential for remote control and communication.1 Its small form factor is ideal for a compact mobile robot.3Power Subsystem: DFRobot UPS HAT for Raspberry Pi Zero (SKU: DFR0528)To ensure operational stability and mobility, the DFRobot UPS HAT provides an uninterruptible power supply. It can power the Raspberry Pi and all connected peripherals from a 3.7V Lithium battery, automatically switching between external power and battery power.4 A key feature of this HAT is its onboard MAX17043 fuel gauge IC, which communicates battery voltage and capacity information to the Raspberry Pi via the I2C bus, allowing for intelligent power management.6I/O and Actuator Control: DFRobot IO Expansion HAT for Pi Zero (SKU: DFR0604)This HAT serves as the robot's primary interface for controlling actuators and reading from certain sensors. It features an onboard STM32 microcontroller that offloads PWM signal generation for servos and analog-to-digital conversion (ADC) from the Raspberry Pi's main processor.7 The Raspberry Pi communicates with the STM32 via I2C to command the servos and read analog values. The HAT also breaks out a set of the Raspberry Pi's native digital GPIO pins (GPIO16-GPIO25) for direct use.9Visual Output: Waveshare 2-inch SPI LCD ModuleThis high-resolution (240x320 pixels) IPS display provides a vibrant and clear visual interface for the robot.10 It utilizes the high-speed Serial Peripheral Interface (SPI) bus, which minimizes the number of required GPIO pins while ensuring fast refresh rates suitable for displaying dynamic content like facial expressions.12 The display is driven by the common ST7789V controller, for which robust Python libraries are available.10Proximity Sensing: VL6180X ToF Distance Sensor (SKU: SEN0427)The VL6180X sensor provides highly accurate distance measurements in the 5-100mm range (up to 200mm in ideal conditions) using Time-of-Flight technology.13 Unlike infrared sensors, its measurements are largely independent of the target's color and reflectance. It communicates via the I2C bus and includes an integrated ambient light sensor (ALS), offering additional environmental sensing capabilities.15Actuation: SG90 Servo Motors (180° & 360°)Standard SG90 micro servos are used for all motion. The 180° servos are suitable for pan-and-tilt mechanisms, while the 360° continuous rotation servos are used for the robot's locomotion.16 These are controlled by a PWM signal with a pulse width typically ranging from 1ms to 2ms to determine position or speed.18 These signals will be generated by the IO Expansion HAT.Auditory Feedback: Piezo BuzzerA simple piezo buzzer connected to a digital output pin on the IO Expansion HAT provides basic auditory cues, such as beeps and tones, to supplement visual feedback.1.3. The Critical I2C Address Conflict: A Software-Based SolutionA thorough review of the component specifications reveals a fundamental hardware conflict. Both the DFRobot IO Expansion HAT and the DFRobot UPS HAT are hard-coded to use the same I2C address, 0x10.7The I2C protocol is a master-slave bus where each slave device must have a unique address for the master (the Raspberry Pi) to communicate with it. If two devices share the same address, the master cannot distinguish between them, leading to bus collisions and communication failure. Since the addresses on these HATs cannot be easily changed, connecting them to the same I2C bus would render both inoperable.Proposed Solution: Software-Defined I2C BusInstead of using a hardware multiplexer, we can leverage a powerful feature of the Raspberry Pi OS to resolve this conflict through software. The solution is to create a second, independent I2C bus on a different set of GPIO pins.The operational principle is as follows:Primary Hardware I2C Bus (i2c-1): The Raspberry Pi's default I2C bus on GPIO 2 (SDA) and GPIO 3 (SCL) will be used for the DFRobot IO Expansion HAT and the VL6180X ToF Sensor. These devices can coexist on the same bus because they have unique addresses (0x10 and 0x29, respectively).Secondary Software I2C Bus (i2c-3): We will configure a new, "bit-banged" software I2C bus on two unused GPIO pins. This is achieved by adding a Device Tree Overlay (i2c-gpio) to the Raspberry Pi's boot configuration. This new bus will be dedicated solely to communicating with the DFRobot UPS HAT.Software Isolation: By placing the UPS HAT on its own dedicated software bus, the address conflict is completely resolved at the system level. The Raspberry Pi will see two distinct I2C buses, and it can communicate with the device at address 0x10 on either bus without ambiguity.This software-based approach is highly effective, requires no additional hardware, and is a standard method for expanding the Raspberry Pi's I2C capabilities.231.4. Finalized System Block DiagramThe resulting system architecture is a robust, hierarchical design. The Raspberry Pi Zero 2W sits at the apex of the control structure. It communicates directly with the high-bandwidth Waveshare LCD via the dedicated SPI bus. For I2C peripherals, it now manages two separate buses: the primary hardware bus (i2c-1) connecting to the IO Expansion HAT and the VL6180X Sensor, and a secondary software-defined bus (i2c-3) connecting exclusively to the UPS HAT. This architecture resolves all hardware conflicts and provides a scalable foundation for future expansion.Part 2: Hardware Assembly and Interconnection GuideThis section provides a detailed, step-by-step guide for the physical construction of the upgraded NinjaRobot. Meticulous adherence to these instructions is essential for a functional build.2.1. Required Tools and ComponentsBill of Materials (BOM)ComponentSKU / IdentifierQuantityPurposeRaspberry Pi Zero 2W-1Core ProcessorDFRobot IO Expansion HATDFR06041I/O & Actuator ControlDFRobot UPS HATDFR05281Uninterruptible PowerWaveshare 2-inch SPI LCD-1Visual Display (Face)VL6180X ToF Distance SensorSEN04271Obstacle DetectionSG90 180° Servo Motor-2Pan/Tilt MechanismSG90 360° Servo Motor-2Locomotion/WheelsPiezo Buzzer-1Auditory Feedback3.7V LiPo/Li-Ion Battery(with PH2.0 connector)1Mobile Power SourceMicroSD Card(16GB or larger)1Operating System Storage5V/2.5A Micro-USB Power Supply-1Charging & Stationary PowerJumper Wires (Female-Female)-AssortedInterconnectionsStandoffs and Screws(M2.5)As neededMechanical AssemblyRobot Chassis(As per NinjaTire.md)1Structural FrameRequired ToolsSoldering iron and solder (may be required for headers)Precision screwdriver set (Phillips)Wire strippers/cuttersThird hand tool (recommended for soldering)Computer for flashing microSD card2.2. Mechanical AssemblyPrepare the Raspberry Pi: If your Raspberry Pi Zero 2W does not have a pre-soldered 40-pin GPIO header, carefully solder one in place. Ensure the header is straight and all pins have a solid connection.Stack the HATs:Begin with the Raspberry Pi Zero 2W at the bottom of the stack.Place the DFRobot UPS HAT (DFR0528) directly onto the Raspberry Pi's 40-pin header.Place the DFRobot IO Expansion HAT (DFR0604) on top of the UPS HAT.Use the provided M2.5 standoffs and screws to securely fasten the three boards together, ensuring there is adequate space between them and that the GPIO headers are fully seated.5Mount Components on Chassis:Following the general layout from the original NinjaTire.md documentation, mount the Raspberry Pi stack onto the main chassis.Mount the two 360° servos for the wheels and the two 180° servos for the pan/tilt mechanism.Create a mounting point for the Waveshare LCD at the front of the robot to serve as its face.Mount the VL6180X ToF sensor below the LCD, facing forward, for obstacle detection.Connect Battery: Connect the 3.7V Lithium battery to the PH2.0 connector on the UPS HAT.62.3. Wiring and InterconnectionThis wiring plan is the physical implementation of the GPIO mapping detailed in Part 4. It is critical to follow these connections precisely. Use female-to-female jumper wires for all connections between board headers.Wiring Diagram DescriptionThe wiring is organized around three main communication buses. The SPI bus is dedicated to the Waveshare LCD. The primary hardware I2C bus is shared by the IO Expansion HAT and the VL6180X sensor. A secondary software I2C bus is created on two separate GPIO pins specifically for the UPS HAT to avoid address conflicts. All actuators (servos, buzzer) connect to the DFRobot IO Expansion HAT, not directly to the Raspberry Pi.Comprehensive Wiring TableSource ComponentSource Pin (Name)Wire ColorDestination ComponentDestination Pin (Name)Power DistributionRaspberry PiPin 1 (3.3V)RedWaveshare LCDVCCRaspberry PiPin 9 (GND)BlackWaveshare LCDGNDPrimary I2C Bus (i2c-1)Raspberry PiPin 3 (GPIO 2 / SDA)BlueDFRobot IO Expansion HATI2C (D)Raspberry PiPin 5 (GPIO 3 / SCL)YellowDFRobot IO Expansion HATI2C (C)DFRobot IO Expansion HATI2C Header (SDA)BlueVL6180X SensorSDADFRobot IO Expansion HATI2C Header (SCL)YellowVL6180X SensorSCLDFRobot IO Expansion HATI2C Header (3.3V)RedVL6180X SensorVCCDFRobot IO Expansion HATI2C Header (GND)BlackVL6180X SensorGNDSecondary Software I2C Bus (i2c-3 for UPS HAT)Raspberry PiPin 29 (GPIO 5)GreenDFRobot UPS HATI2C (SDA)Raspberry PiPin 31 (GPIO 6)PurpleDFRobot UPS HATI2C (SCL)SPI Bus (LCD)Raspberry PiPin 19 (GPIO 10 / MOSI)OrangeWaveshare LCDDINRaspberry PiPin 23 (GPIO 11 / SCLK)GreenWaveshare LCDCLKRaspberry PiPin 24 (GPIO 8 / CE0)PurpleWaveshare LCDCSRaspberry PiPin 22 (GPIO 25)WhiteWaveshare LCDDCRaspberry PiPin 11 (GPIO 17)GrayWaveshare LCDRSTRaspberry PiPin 18 (GPIO 24)BrownWaveshare LCDBLActuators & Buzzer (via IO Expansion HAT)Wheel Servo (Left)Signal WireOrangeDFRobot IO Expansion HATPWM0 (S)Wheel Servo (Right)Signal WireOrangeDFRobot IO Expansion HATPWM1 (S)Pan ServoSignal WireOrangeDFRobot IO Expansion HATPWM2 (S)Tilt ServoSignal WireOrangeDFRobot IO Expansion HATPWM3 (S)All ServosPower (V+)RedDFRobot IO Expansion HATPWM (⊕)All ServosGround (GND)BlackDFRobot IO Expansion HATPWM (㊀)BuzzerPositive (+)RedDFRobot IO Expansion HATDigital 23 (+)BuzzerNegative (-)BlackDFRobot IO Expansion HATDigital 23 (-)Note on Servo Power: The PWM power rail (⊕/㊀) on the IO Expansion HAT can be powered by the Pi's 5V or an external supply.9 For four SG90 servos, the Pi's 5V supply should be sufficient, but for more powerful servos, an external 6-12V supply connected to the VP terminal would be required.Part 3: Raspberry Pi OS and Environment ConfigurationA clean and correctly configured software environment is paramount for system stability and performance. This section details the process of setting up the Raspberry Pi from a fresh OS image.3.1. Preparing the Raspberry Pi OSDownload OS: Download the latest version of Raspberry Pi OS (Legacy, 64-bit) from the official Raspberry Pi website. The "Legacy" version (based on Debian Bullseye) is recommended for maximum compatibility with existing hardware libraries.Flash OS: Use the Raspberry Pi Imager tool to flash the downloaded OS image to your microSD card. In the imager's advanced options, you can pre-configure the hostname, enable SSH, and set up your Wi-Fi credentials.Initial Boot: Insert the microSD card into the Raspberry Pi, connect a monitor and keyboard (or connect via SSH if pre-configured), and power it on by plugging in the Micro-USB power supply to the UPS HAT's power input.System Configuration: On the first boot, complete the setup wizard. Set your country, language, and timezone. Change the default password for the pi user. Ensure the Pi is connected to your Wi-Fi network.3.2. Enabling Hardware InterfacesThe hardware I2C and SPI interfaces, as well as the new software I2C bus, must be configured.Enable Hardware Interfaces via raspi-config:Open a terminal window.Run the Raspberry Pi configuration tool:Bashsudo raspi-config
+Enable I2C: Navigate to 3 Interface Options -> I5 I2C. Select <Yes> to enable the ARM I2C interface and press Enter. Confirm by selecting <Ok>.6Enable SPI: Navigate to 3 Interface Options -> I4 SPI. Select <Yes> to enable the SPI interface and press Enter. Confirm by selecting <Ok>.12Navigate to Finish but do not reboot yet.Enable Software I2C Bus via config.txt:Open the boot configuration file for editing:Bashsudo nano /boot/config.txt
+Go to the end of the file and add the following line to create a new I2C bus (named i2c-3) on GPIO 5 (SDA) and GPIO 6 (SCL):23dtoverlay=i2c-gpio,bus=3,i2c_gpio_sda=5,i2c_gpio_scl=6
+Save the file and exit the editor (Ctrl+X, Y, Enter).Now, reboot the system for all changes to take effect:Bashsudo reboot
+3.3. System Updates and Core Dependency InstallationOnce the Pi has rebooted, open a terminal and perform a full system update and install essential tools.Bashsudo apt update && sudo apt upgrade -y
+sudo apt install -y python3-pip python3-venv i2c-tools git
+python3-pip: The package installer for Python.python3-venv: For creating isolated Python environments (good practice).i2c-tools: Provides command-line utilities like i2cdetect to debug the I2C bus.git: For cloning software repositories from GitHub.3.4. Python Library InstallationThe NinjaRobot codebase relies on several third-party Python libraries. The following commands will install all required dependencies.Clone and Install DFRobot IO Expansion Board Library:This library is required to control the PWM and Analog functions of the IO Expansion HAT. It must be installed from its source on GitHub.9Bashgit clone https://github.com/DFRobot/DFRobot_RaspberryPi_Expansion_Board.git
+cd DFRobot_RaspberryPi_Expansion_Board/python/raspberrypi/DFRobot_Expansion_Board
+sudo python3 setup.py install
+cd../../../../
+Install Libraries from PyPI:Install all other required libraries using pip. This includes libraries for the ToF sensor, LCD, Gemini AI, and the web server.12Bashsudo pip3 install adafruit-circuitpython-vl6180x
+sudo pip3 install Pillow numpy spidev
+sudo pip3 install google-generativeai
+sudo pip3 install Flask
+3.5. Verifying Hardware DetectionBefore proceeding to the main application, it is crucial to verify that the hardware is correctly wired and detected by the operating system on the correct buses.List Available I2C Buses:Run i2cdetect -l to see all active I2C buses. You should see i2c-1 (hardware) and i2c-3 (the new software bus).Verify Devices on Hardware Bus (i2c-1):Run the i2cdetect command for bus 1. You should see the IO Expansion HAT at address 0x10 and the VL6180X sensor at 0x29.Bashsudo i2cdetect -y 1
+The output should show 10 and 29.Verify Device on Software Bus (i2c-3):Run the i2cdetect command for bus 3. You should see the UPS HAT at address 0x10.Bashsudo i2cdetect -y 3
+The output should show 10.If all devices appear at their expected addresses on the correct buses, the hardware and system configuration are correct.Part 4: GPIO Mapping and Bus ManagementA disciplined approach to GPIO pin allocation is essential for a complex project like the NinjaRobot. This section provides the definitive pinout map and the software strategy for managing the communication buses.4.1. Pin Allocation StrategyThe allocation of the 40 pins on the Raspberry Pi Zero 2W header is driven by the specific requirements of each peripheral, prioritizing performance and avoiding conflicts.High-Speed SPI Bus: The Waveshare LCD requires a high-speed data interface for smooth animation. The Pi's primary hardware SPI bus (SPI0) is the optimal choice. This reserves GPIO 10 (MOSI), GPIO 11 (SCLK), and GPIO 8 (CS0) for this purpose.12 Additional GPIOs are required for control signals (DC, RST, BL), which are assigned to available standard GPIOs.Dual I2C Bus Architecture: To resolve the hardware address conflict, two I2C buses are used:Hardware I2C (i2c-1): The default bus on GPIO 2 (SDA) and GPIO 3 (SCL) is used for the IO Expansion HAT and the VL6180X sensor.Software I2C (i2c-3): A new bus is created on GPIO 5 (SDA) and GPIO 6 (SCL) exclusively for the UPS HAT.DFRobot IO HAT Pins: The IO Expansion HAT provides its own set of brokered I/O ports. The PWM ports are used for all four servo motors, and these are controlled via I2C commands, consuming no additional GPIO pins on the Pi itself.9 The digital ports on the HAT (which map to the Pi's GPIOs) are used for simple digital I/O, such as controlling the buzzer.4.2. Final GPIO and Bus Assignment TableThis table serves as the canonical reference for all electrical connections as specified for this project build.ComponentPin FunctionHAT LabelRPi GPIO (BCM)Bus/TypeVL6180X SensorSCLI2C Header SCL3I2C (Hardware)SDAI2C Header SDA2I2C (Hardware)Waveshare LCDDINSPI Header MOSI10SPICLKSPI Header SCK11SPICSSPI Header CS8SPIDCD2525GPIORSTD1717GPIOBLD2424GPIOBuzzerSignalD2323GPIOServos (x4)SignalS0 - S3N/APWM (via IO HAT)UPS HATSCL(Direct to Pi)6I2C (Software)SDA(Direct to Pi)5I2C (Software)4.3. I2C Bus Management in SoftwareThe software must be aware of the two separate I2C buses. This is handled by creating distinct I2C objects for each bus in the Python code.The smbus2 or busio library will be used to instantiate bus objects.I2C(1) or busio.I2C(board.SCL, board.SDA) will refer to the primary hardware bus (i2c-1).I2C(3) or busio.I2C(board.D6, board.D5) will refer to the secondary software bus (i2c-3).Each device driver (for the IO HAT, VL6180X, and UPS HAT) will be initialized with the appropriate bus object. This ensures that commands intended for the IO HAT are sent only on i2c-1, and commands for the UPS HAT are sent only on i2c-3, preventing any communication errors. This logic will be encapsulated within a HardwareManager class to provide a clean abstraction for the main application.Part 5: The Refactored NinjaRobot Python CodebaseThis section presents the complete, fully functional, and documented Python source code for the upgraded NinjaRobot. The code is structured into modular, object-oriented components to enhance maintainability, readability, and future extensibility.5.1. Software Architecture: A Modular, Object-Oriented ApproachThe software architecture is designed around the principle of separation of concerns. Each hardware component is managed by a dedicated Python class. A central HardwareManager class acts as a hardware abstraction layer (HAL), responsible for initializing all components on their correct buses. The main application (ninja_core.py) interacts with this manager to access hardware functionalities, keeping the high-level logic clean and decoupled from low-level hardware details.Project File Structure:NinjaRobot/
+├── assets/
+│   ├── happy.png
+│   ├── sad.png
+│   ├── neutral.png
+│   └── thinking.png
+├── templates/
+│   └── index.html
+├── config.py
+├── hardware_manager.py
+├── lcd_manager.py
+├── ninja_buzzer.py
+├── ninja_core.py
+├── ninja_gemini.py
+├── ninja_movement.py
+├── ninja_sensors.py
+└── web_interface.py
+5.2. config.py - Centralized ConfigurationThis new file centralizes all static configuration variables, such as GPIO pin numbers, I2C addresses, API keys, and other constants. This practice prevents "magic numbers" from being scattered throughout the code and makes future modifications easier.Python# config.py
 """
-import smbus2 as smbus # Use smbus2 for better compatibility
-import time
+Central configuration file for the NinjaRobot project.
+Contains all GPIO pin assignments, I2C addresses, API keys, and other constants.
+"""
 
-class DFRobot_VL6180X:
-  VL6180X_IIC_ADDRESS = 0x29
-  VL6180X_IDENTIFICATION_MODEL_ID = 0x000
-  VL6180X_SYSTEM_FRESH_OUT_OF_RESET = 0x016
-  VL6180X_SYSRANGE_START = 0x018
-  VL6180X_RESULT_RANGE_VAL = 0x062
-  VL6180X_ID = 0xB4
+import os
 
-  def __init__(self, iic_addr=VL6180X_IIC_ADDRESS, bus=1):
-    self._i2cbus = smbus.SMBus(bus)
-    self._i2c_addr = iic_addr
+# --- Gemini AI Configuration ---
+# IMPORTANT: Set your Google API Key as an environment variable
+# In your terminal, run: export GOOGLE_API_KEY='YOUR_API_KEY'
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_MODEL_NAME = "gemini-1.5-flash"
 
-  def begin(self):
-    try:
-      model_id = self._read_register(self.VL6180X_IDENTIFICATION_MODEL_ID)
-      if model_id != self.VL6180X_ID:
-        return False
-      if self._read_register(self.VL6180X_SYSTEM_FRESH_OUT_OF_RESET) == 1:
-        self._write_register(0x0207, 0x01)
-        self._write_register(0x0208, 0x01)
-        self._write_register(0x0096, 0x00)
-        self._write_register(0x0097, 0xfd)
-        self._write_register(0x00e3, 0x00)
-        self._write_register(0x00e4, 0x04)
-        self._write_register(0x00e5, 0x02)
-        self._write_register(0x00e6, 0x01)
-        self._write_register(0x00e7, 0x03)
-        self._write_register(0x00f5, 0x02)
-        self._write_register(0x00d9, 0x05)
-        self._write_register(0x00db, 0xce)
-        self._write_register(0x00dc, 0x03)
-        self._write_register(0x00dd, 0xf8)
-        self._write_register(0x009f, 0x00)
-        self._write_register(0x00a3, 0x3c)
-        self._write_register(0x00b7, 0x00)
-        self._write_register(0x00bb, 0x3c)
-        self._write_register(0x00b2, 0x09)
-        self._write_register(0x00ca, 0x09)
-        self._write_register(0x0198, 0x01)
-        self._write_register(0x01b0, 0x17)
-        self._write_register(0x01ad, 0x00)
-        self._write_register(0x00ff, 0x05)
-        self._write_register(0x0100, 0x05)
-        self._write_register(0x0199, 0x05)
-        self._write_register(0x01a6, 0x1b)
-        self._write_register(0x01ac, 0x3e)
-        self._write_register(0x01a7, 0x1f)
-        self._write_register(0x0030, 0x00)
-        self._write_register(0x014, 0x24) # SYSTEM_INTERRUPT_CONFIG_GPIO
-        self._write_register(0x01C, 0x32) # SYSRANGE_MAX_CONVERGENCE_TIME
-        self._write_register(0x02D, 0x11) # SYSRANGE_RANGE_CHECK_ENABLES
-        self._write_register(0x022, 0x7B) # SYSRANGE_EARLY_CONVERGENCE_ESTIMATE
-        self._write_register(0x040, 0x64) # SYSALS_INTEGRATION_PERIOD
-        self._write_register(0x03F, 0x46) # SYSALS_ANALOGUE_GAIN
-        self._write_register(0x011, 0x10) # SYSTEM_MODE_GPIO1
-        self._write_register(self.VL6180X_SYSTEM_FRESH_OUT_OF_RESET, 0x00)
-      return True
-    except IOError:
-      return False
+# --- Hardware Pin and Bus Configuration ---
 
-  def range_poll_measurement(self):
-    self._write_register(self.VL6180X_SYSRANGE_START, 0x01)
-    # A short delay is needed for the measurement to complete
-    time.sleep(0.01) 
-    return self._read_register(self.VL6180X_RESULT_RANGE_VAL)
+# I2C Bus Numbers
+# Bus 1 is the default hardware I2C on GPIO 2 & 3
+# Bus 3 is the software I2C we created on GPIO 5 & 6
+HW_I2C_BUS = 1
+SW_I2C_BUS = 3
 
-  def _write_register(self, reg, data):
-    self._i2cbus.write_i2c_block_data(self._i2c_addr, (reg >> 8) & 0xFF, [reg & 0xFF, data])
-    
-  def _read_register(self, reg):
-    self._i2cbus.write_i2c_block_data(self._i2c_addr, (reg >> 8) & 0xFF, [reg & 0xFF])
-    time.sleep(0.001)
-    return self._i2cbus.read_byte(self._i2c_addr)
-```
-*Save and Exit (`Ctrl+X`, `Y`, `Enter`)*
+# I2C Device Addresses
+IO_EXPANSION_HAT_ADDR = 0x10
+UPS_HAT_ADDR = 0x10  # Note: Same as IO HAT, hence the need for a separate bus
+VL6180X_ADDR = 0x29
 
-### **File 2: `Ninja_Distance.py`** (Updated)
+# Waveshare 2-inch SPI LCD Pins (BCM numbering)
+LCD_DC_PIN = 25
+LCD_RST_PIN = 17 # Updated to match user request
+LCD_BL_PIN = 24  # Updated to match user request
+# SPI bus is handled by spidev library, CS pin is also handled internally
 
-This file uses the new sensor library.
+# DFRobot IO Expansion HAT Digital Pins (BCM numbering)
+# These are the GPIO numbers as seen by the Raspberry Pi
+# The HAT maps them to its 'D' ports.
+BUZZER_PIN = 23 # Updated to match user request
 
-**Create/overwrite the file:**
-```bash
-nano Ninja_Distance.py```
-**Paste the following code:**
-```python
-# -*- coding: utf-8 -*
-'''!
-  @file Ninja_Distance.py
-  @brief Measures distance using a VL6180X I2C Time-of-Flight sensor.
-  @copyright Copyright (c) 2024
-  @license The MIT License (MIT)
-  @author Assistant
-  @version V2.0
-'''
-import time
-import sys
-import DFRobot_VL6180X
+# DFRobot IO Expansion HAT PWM Pins
+# These are channel numbers for the HAT's STM32 controller, not GPIO pins.
+SERVO_PAN_CHANNEL = 2
+SERVO_TILT_CHANNEL = 3
+SERVO_LEFT_WHEEL_CHANNEL = 1
+SERVO_RIGHT_WHEEL_CHANNEL = 0
 
-sensor = None
-sensor_initialized = False
+# --- Servo Configuration ---
+# Calibration values for 360-degree continuous rotation servos
+# These may need tuning for your specific servos to find the true 'stop' point.
+SERVO_STOP_PWM = 1500  # Microseconds, theoretically 1.5ms is stop
+SERVO_SPEED_RANGE = 400 # PWM range for full speed forward/backward
 
-def setup_sensor():
-    """Initializes the VL6180X sensor."""
-    global sensor, sensor_initialized
-    if sensor_initialized: return True
-    
-    print("Initializing VL6180X distance sensor...")
-    try:
-        sensor = DFRobot_VL6180X.DFRobot_VL6180X(bus=1)
-        if not sensor.begin():
-            print("Error: Failed to initialize the VL6180X sensor.")
-            return False
+# --- Behavior Configuration ---
+OBSTACLE_DISTANCE_THRESHOLD_MM = 80 # Distance in mm to trigger obstacle avoidance
+
+5.3. hardware_manager.py - The Hardware Abstraction LayerThis crucial module is updated to manage two separate I2C buses instead of a multiplexer. It initializes each component on its correct bus and provides easy-to-access objects for each hardware module.Python# hardware_manager.py
+"""
+Hardware Abstraction Layer for the NinjaRobot.
+Initializes all hardware components on their correct I2C buses
+and provides a single point of access to all hardware objects.
+"""
+
+import board
+import busio
+from smbus2 import SMBus
+from DFRobot_Expansion_Board import DFRobot_Expansion_Board
+import adafruit_vl6180x
+
+import config
+from lcd_manager import LCDManager
+
+class HardwareManager:
+    """Manages initialization and access to all robot hardware."""
+    def __init__(self):
+        print("Initializing Hardware Manager...")
+        self.hw_i2c_bus = None
+        self.sw_i2c_bus = None
+        self.io_board = None
+        self.vl6180x = None
+        self.lcd = None
         
-        print("VL6180X sensor initialized successfully.")
-        sensor_initialized = True
-        return True
-    except Exception as e:
-        print(f"An exception occurred during sensor setup: {e}")
-        return False
-
-def measure_distance():
-    """
-    Measures distance in centimeters (cm).
-    Returns -1 on error/timeout.
-    """
-    if not sensor_initialized: return -1
+        self._initialize_i2c_buses()
+        self._initialize_io_expansion_hat()
+        self._initialize_vl6180x_sensor()
+        self._initialize_lcd()
         
-    try:
-        distance_mm = sensor.range_poll_measurement()
-        if distance_mm == 255: return -1
-        return distance_mm / 10.0
-    except Exception as e:
-        print(f"Error during measurement: {e}")
-        return -1
+        print("Hardware Manager initialization complete.")
 
-# Main test block
-if __name__ == "__main__":
-    if not setup_sensor():
-        sys.exit("Exiting due to sensor failure.")
+    def _initialize_i2c_buses(self):
+        """Initializes the primary hardware and secondary software I2C buses."""
+        try:
+            # For DFRobot library, which uses smbus
+            self.hw_i2c_bus_smbus = SMBus(config.HW_I2C_BUS)
+            # For Adafruit libraries, which use busio
+            self.hw_i2c_bus_busio = board.I2C() # Defaults to bus 1
+            
+            # The software I2C bus for the UPS HAT
+            self.sw_i2c_bus_smbus = SMBus(config.SW_I2C_BUS)
+            print("I2C buses initialized.")
+        except Exception as e:
+            print(f"FATAL: Failed to initialize I2C buses: {e}")
+            raise
 
-    print("\n--- VL6180X Distance Sensor Test ---")
-    try:
-        while True:
-            dist_cm = measure_distance()
-            if dist_cm == -1: print("Status: Out of range or error")
-            else: print(f"Distance: {dist_cm:.2f} cm")
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\nProgram stopped by user.")
-```
-*Save and Exit*
+    def _initialize_io_expansion_hat(self):
+        """Initializes the DFRobot IO Expansion HAT on the hardware I2C bus."""
+        try:
+            self.io_board = DFRobot_Expansion_Board(i2c_bus=self.hw_i2c_bus_smbus, i2c_addr=config.IO_EXPANSION_HAT_ADDR)
+            self.io_board.begin()
+            self.io_board.set_pwm_enable()
+            self.io_board.set_pwm_frequency(50) # Standard for SG90 servos
+            print("DFRobot IO Expansion HAT initialized.")
+        except Exception as e:
+            print(f"FATAL: Failed to initialize DFRobot IO Expansion HAT: {e}")
+            raise
 
-### **File 3: `Ninja_Face_LCD.py`** (New File)
+    def _initialize_vl6180x_sensor(self):
+        """Initializes the VL6180X ToF sensor on the hardware I2C bus."""
+        try:
+            self.vl6180x = adafruit_vl6180x.VL6180X(self.hw_i2c_bus_busio, address=config.VL6180X_ADDR)
+            print("VL6180X ToF sensor initialized.")
+        except Exception as e:
+            print(f"FATAL: Failed to initialize VL6180X sensor: {e}")
+            raise
 
-This new file controls the robot's face.
+    def _initialize_lcd(self):
+        """Initializes the Waveshare 2-inch SPI LCD."""
+        try:
+            self.lcd = LCDManager()
+            self.lcd.clear()
+            print("Waveshare 2-inch LCD initialized.")
+        except Exception as e:
+            print(f"FATAL: Failed to initialize LCD: {e}")
+            raise
 
-**Create the file:**
-```bash
-nano Ninja_Face_LCD.py
-```
-**Paste the following code:**
-```python
-# -*- coding: utf-8 -*
-'''!
-  @file Ninja_Face_LCD.py
-  @brief Controls the Waveshare 2-inch SPI LCD to display expressions.
-  @copyright Copyright (c) 2024
-  @license The MIT License (MIT)
-  @author Assistant
-  @version V1.1
-'''
+    def get_ups_hat_bus(self):
+        """Provides direct access to the UPS HAT's software I2C bus."""
+        if not self.sw_i2c_bus_smbus:
+            raise RuntimeError("Software I2C bus not initialized.")
+        return self.sw_i2c_bus_smbus
+
+# Singleton instance of the HardwareManager
+try:
+    hw_manager = HardwareManager()
+except Exception as e:
+    print(f"Could not create HardwareManager instance. Robot cannot function. Error: {e}")
+    hw_manager = None
+
+5.4. lcd_manager.py - The Face of the RobotThis module manages all interactions with the SPI LCD. It abstracts low-level drawing commands and provides high-level functions to display pre-designed facial expressions or text. This approach uses the Python Imaging Library (Pillow) to create and manipulate images, which are then displayed on the screen.Python# lcd_manager.py
+"""
+Manages the Waveshare 2-inch SPI LCD.
+Provides methods for clearing the screen, displaying text, and showing facial expressions from image files.
+"""
 import spidev
 import RPi.GPIO as GPIO
 import time
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+import config
 
-# --- Low-level LCD Driver Class ---
-class WaveshareLCD:
-    def __init__(self, rst_pin=17, dc_pin=25, bl_pin=24, cs_pin=8):
-        self.RST_PIN, self.DC_PIN, self.BL_PIN, self.CS_PIN = rst_pin, dc_pin, bl_pin, cs_pin
-        self.width, self.height = 240, 320
+class LCDManager:
+    def __init__(self, width=240, height=320):
+        self.width = width
+        self.height = height
         
+        # GPIO setup
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
-        for pin in [self.RST_PIN, self.DC_PIN, self.BL_PIN, self.CS_PIN]:
-            GPIO.setup(pin, GPIO.OUT)
-
-        self.spi = spidev.SpiDev()
-        self.spi.open(0, 0) # SPI bus 0, device 0 (CS0)
+        GPIO.setup(config.LCD_RST_PIN, GPIO.OUT)
+        GPIO.setup(config.LCD_DC_PIN, GPIO.OUT)
+        GPIO.setup(config.LCD_BL_PIN, GPIO.OUT)
+        
+        # SPI setup
+        self.spi = spidev.SpiDev(0, 0)
         self.spi.max_speed_hz = 40000000
 
+        self._reset()
+        self._init_lcd()
+        self.set_backlight(True)
+
+    def _reset(self):
+        """Performs a hardware reset on the LCD."""
+        GPIO.output(config.LCD_RST_PIN, GPIO.HIGH)
+        time.sleep(0.1)
+        GPIO.output(config.LCD_RST_PIN, GPIO.LOW)
+        time.sleep(0.1)
+        GPIO.output(config.LCD_RST_PIN, GPIO.HIGH)
+        time.sleep(0.1)
+
     def _command(self, cmd):
-        GPIO.output(self.DC_PIN, GPIO.LOW)
+        """Sends a command to the LCD."""
+        GPIO.output(config.LCD_DC_PIN, GPIO.LOW)
         self.spi.writebytes([cmd])
 
     def _data(self, data):
-        GPIO.output(self.DC_PIN, GPIO.HIGH)
+        """Sends data to the LCD."""
+        GPIO.output(config.LCD_DC_PIN, GPIO.HIGH)
         self.spi.writebytes([data])
 
-    def _reset(self):
-        GPIO.output(self.RST_PIN, GPIO.HIGH); time.sleep(0.01)
-        GPIO.output(self.RST_PIN, GPIO.LOW); time.sleep(0.01)
-        GPIO.output(self.RST_PIN, GPIO.HIGH); time.sleep(0.01)
+    def _init_lcd(self):
+        """Initializes the ST7789VW controller."""
+        self._command(0x36)
+        self._data(0x00)
 
-    def init_display(self):
-        self._reset()
-        self.backlight_on()
-        
-        # ST7789V Initialization Sequence
-        self._command(0x36); self._data(0x00)
-        self._command(0x3A); self._data(0x05)
-        self._command(0xB2); self._data(0x0C); self._data(0x0C); self._data(0x00); self._data(0x33); self._data(0x33)
-        self._command(0xB7); self._data(0x35)
-        self._command(0xBB); self._data(0x19)
-        self._command(0xC0); self._data(0x2C)
-        self._command(0xC2); self._data(0x01)
-        self._command(0xC3); self._data(0x12)
-        self._command(0xC4); self._data(0x20)
-        self._command(0xC6); self._data(0x0F)
-        self._command(0xD0); self._data(0xA4); self._data(0xA1)
-        self._command(0xE0); self._data(0xD0); self._data(0x04); self._data(0x0D); self._data(0x11); self._data(0x13); self._data(0x2B); self._data(0x3F); self._data(0x54); self._data(0x4C); self._data(0x18); self._data(0x0D); self._data(0x0B); self._data(0x1F); self._data(0x23)
-        self._command(0xE1); self._data(0xD0); self._data(0x04); self._data(0x0C); self._data(0x11); self._data(0x13); self._data(0x2C); self._data(0x3F); self._data(0x44); self._data(0x51); self._data(0x2F); self._data(0x1F); self._data(0x1F); self._data(0x20); self._data(0x23)
+        self._command(0x3A)
+        self._data(0x05)
+
+        self._command(0xB2)
+        self._data(0x0C)
+        self._data(0x0C)
+        self._data(0x00)
+        self._data(0x33)
+        self._data(0x33)
+
+        self._command(0xB7)
+        self._data(0x35)
+
+        self._command(0xBB)
+        self._data(0x19)
+
+        self._command(0xC0)
+        self._data(0x2C)
+
+        self._command(0xC2)
+        self._data(0x01)
+
+        self._command(0xC3)
+        self._data(0x12)
+
+        self._command(0xC4)
+        self._data(0x20)
+
+        self._command(0xC6)
+        self._data(0x0F)
+
+        self._command(0xD0)
+        self._data(0xA4)
+        self._data(0xA1)
+
+        self._command(0xE0)
+        self._data(0xD0)
+        self._data(0x04)
+        self._data(0x0D)
+        self._data(0x11)
+        self._data(0x13)
+        self._data(0x2B)
+        self._data(0x3F)
+        self._data(0x54)
+        self._data(0x4C)
+        self._data(0x18)
+        self._data(0x0D)
+        self._data(0x0B)
+        self._data(0x1F)
+        self._data(0x23)
+
+        self._command(0xE1)
+        self._data(0xD0)
+        self._data(0x04)
+        self._data(0x0C)
+        self._data(0x11)
+        self._data(0x13)
+        self._data(0x2C)
+        self._data(0x3F)
+        self._data(0x44)
+        self._data(0x51)
+        self._data(0x2F)
+        self._data(0x1F)
+        self._data(0x1F)
+        self._data(0x20)
+        self._data(0x23)
+
         self._command(0x21)
-        self._command(0x11); time.sleep(0.12)
+        self._command(0x11)
+        time.sleep(0.12)
         self._command(0x29)
-        self.clear()
-        print("LCD Driver Initialized.")
 
     def set_window(self, x_start, y_start, x_end, y_end):
+        """Sets the drawing window area."""
         self._command(0x2A)
-        self.spi.writebytes2([(x_start >> 8) & 0xFF, x_start & 0xFF, (x_end >> 8) & 0xFF, x_end & 0xFF])
+        self._data((x_start >> 8) & 0xFF)
+        self._data(x_start & 0xFF)
+        self._data((x_end >> 8) & 0xFF)
+        self._data(x_end & 0xFF)
+
         self._command(0x2B)
-        self.spi.writebytes2([(y_start >> 8) & 0xFF, y_start & 0xFF, (y_end >> 8) & 0xFF, y_end & 0xFF])
+        self._data((y_start >> 8) & 0xFF)
+        self._data(y_start & 0xFF)
+        self._data((y_end >> 8) & 0xFF)
+        self._data(y_end & 0xFF)
+
         self._command(0x2C)
 
-    def display(self, image):
-        if image.width != self.width or image.height != self.height:
-            image = image.resize((self.width, self.height))
+    def display_image(self, image):
+        """Displays a PIL image object on the screen."""
+        if image.mode!= "RGB":
+            image = image.convert("RGB")
         
-        pixel_data = np.array(image.convert("RGB"), dtype=np.uint16)
-        color = ((pixel_data[..., 0] & 0xF8) << 8) | ((pixel_data[..., 1] & 0xFC) << 3) | (pixel_data[..., 2] >> 3)
+        # The LCD expects BGR565 format, but PIL works in RGB888.
+        # We convert to numpy array, swap R and B channels, then pack to 16-bit.
+        pixel_data = np.array(image, dtype=np.uint8)
         
+        r = (pixel_data[:,:,0] & 0xF8).astype(np.uint16)
+        g = (pixel_data[:,:,1] & 0xFC).astype(np.uint16)
+        b = (pixel_data[:,:,2] & 0xF8).astype(np.uint16)
+
+        rgb565 = (r << 8) | (g << 3) | (b >> 3)
+
         self.set_window(0, 0, self.width - 1, self.height - 1)
-        GPIO.output(self.DC_PIN, GPIO.HIGH)
-        self.spi.writebytes2(color.tobytes('C'))
+        GPIO.output(config.LCD_DC_PIN, GPIO.HIGH)
+        
+        # SPI buffer is limited, so send in chunks
+        chunk_size = 4096
+        data_bytes = rgb565.tobytes()
+        for i in range(0, len(data_bytes), chunk_size):
+            self.spi.writebytes(list(data_bytes[i:i+chunk_size]))
 
-    def clear(self):
-        black_image = Image.new("RGB", (self.width, self.height), "BLACK")
-        self.display(black_image)
+    def clear(self, color=(0, 0, 0)):
+        """Clears the screen to a specific color."""
+        image = Image.new("RGB", (self.width, self.height), color)
+        self.display_image(image)
 
-    def backlight_on(self): GPIO.output(self.BL_PIN, GPIO.HIGH)
-    def backlight_off(self): GPIO.output(self.BL_PIN, GPIO.LOW)
-    def cleanup(self):
-        print("Cleaning up LCD resources.")
-        self.clear(); self.backlight_off(); self.spi.close()
+    def set_backlight(self, state):
+        """Turns the backlight on or off."""
+        GPIO.output(config.LCD_BL_PIN, GPIO.HIGH if state else GPIO.LOW)
 
-# --- High-level Face Drawing Class ---
-class RobotFace:
-    def __init__(self, lcd_driver):
-        self.lcd = lcd_driver
-        self.width, self.height = 320, 240 # Draw on a horizontal canvas
+    def draw_face(self, emotion):
+        """
+        Draws a facial expression by loading an image from the assets folder.
+        Valid emotions: 'happy', 'sad', 'thinking', 'neutral'
+        """
+        filepath = f"assets/{emotion}.png"
         try:
-            self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        except IOError:
-            self.font = ImageFont.load_default()
+            face_image = Image.open(filepath)
+            # Ensure image is correct size for the display
+            face_image = face_image.resize((self.width, self.height))
+            self.display_image(face_image)
+            print(f"Displayed face: {emotion}")
+        except FileNotFoundError:
+            print(f"Error: Emotion image not found at {filepath}")
+            self.draw_text(f"Error:\n{emotion}.png\nnot found", font_size=30)
 
-    def _display(self, image):
-        self.lcd.display(image.rotate(90, expand=True))
-
-    def _create_base_image(self):
-        return Image.new("RGB", (self.width, self.height), "BLACK")
-
-    def _draw_eyes(self, draw, mood='idle', pupil_data=None):
-        eye_y, r = 120, 45 # y-center, radius
-        lx, rx = self.width // 2 - 80, self.width // 2 + 80
-        draw.ellipse((lx - r, eye_y - r, lx + r, eye_y + r), fill="WHITE")
-        draw.ellipse((rx - r, eye_y - r, rx + r, eye_y + r), fill="WHITE")
-        if pupil_data:
-            for i, (px, py, pr) in enumerate(pupil_data):
-                ex = lx if i == 0 else rx
-                draw.ellipse((ex + px - pr, eye_y + py - pr, ex + px + pr, eye_y + py + pr), fill="BLACK")
-
-    def show_expression(self, mood='idle'):
-        print(f"FACE: Setting expression to '{mood}'")
-        image = self._create_base_image()
+    def draw_text(self, text, position=(10, 10), font_size=20, text_color=(255, 255, 255), bg_color=(0, 0, 0)):
+        """Draws text on the screen."""
+        image = Image.new("RGB", (self.width, self.height), bg_color)
         draw = ImageDraw.Draw(image)
-        pupils = [(0, 0, 15), (0, 0, 15)]
-
-        if mood == 'idle': self.animate_blink(); return
-        elif mood == 'happy':
-            self._draw_eyes(draw, pupil_data=pupils)
-            draw.arc((120, 180, 200, 240), 0, 180, fill="WHITE", width=10)
-        elif mood == 'sad':
-            pupils = [(0, 15, 12), (0, 15, 12)]
-            self._draw_eyes(draw, pupil_data=pupils)
-            draw.arc((130, 200, 190, 230), 180, 360, fill="WHITE", width=8)
-        elif mood in ['angry', 'danger']:
-            r = 45; eye_y=120; lx=self.width//2-80; rx=self.width//2+80
-            draw.line((lx - r, eye_y - 20, lx + r, eye_y - 40), fill="WHITE", width=15)
-            draw.line((rx + r, eye_y - 20, rx - r, eye_y - 40), fill="WHITE", width=15)
-            draw.line((130, 210, 190, 210), fill="WHITE", width=8)
-        elif mood == 'sleepy': self.animate_sleepy(); return
-        else: self._draw_eyes(draw, pupil_data=pupils)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except IOError:
+            font = ImageFont.load_default()
         
-        self._display(image)
+        draw.text(position, text, font=font, fill=text_color)
+        self.display_image(image)
 
-    def animate_blink(self):
-        open_img = self._create_base_image()
-        draw_open = ImageDraw.Draw(open_img)
-        self._draw_eyes(draw_open, pupil_data=[(0, 0, 15), (0, 0, 15)])
+5.5. Refactored Application ModulesThe original modules are refactored to work with the new HardwareManager. They no longer handle their own GPIO or I2C setup.ninja_movement.pyPython# ninja_movement.py
+"""
+Controls the robot's movement and pan/tilt mechanism.
+"""
+import time
+import config
+
+class MovementController:
+    def __init__(self, io_board):
+        self.io_board = io_board
+        print("Movement Controller initialized.")
+        self.stop()
+        self.center_head()
+
+    def _set_servo_pulse(self, channel, pulse_us):
+        """Sets a servo's pulse width in microseconds."""
+        # The DFRobot library takes a value from 0-180 for degrees,
+        # but we can map our microsecond pulse to this range.
+        # 500us -> 0, 2500us -> 180
+        duty = (pulse_us - 500) / 2000 * 180
+        duty = max(0, min(180, duty)) # Clamp value
+        self.io_board.set_pwm_duty(channel, duty)
+
+    def stop(self):
+        """Stops the robot's wheels."""
+        self._set_servo_pulse(config.SERVO_LEFT_WHEEL_CHANNEL, config.SERVO_STOP_PWM)
+        self._set_servo_pulse(config.SERVO_RIGHT_WHEEL_CHANNEL, config.SERVO_STOP_PWM)
+        print("Movement: Stopped")
+
+    def move(self, left_speed, right_speed):
+        """
+        Controls wheel speeds. Speed is from -1.0 (full reverse) to 1.0 (full forward).
+        """
+        left_pulse = config.SERVO_STOP_PWM - (left_speed * config.SERVO_SPEED_RANGE)
+        right_pulse = config.SERVO_STOP_PWM + (right_speed * config.SERVO_SPEED_RANGE)
         
-        closed_img = self._create_base_image()
-        draw_closed = ImageDraw.Draw(closed_img)
-        r = 50; eye_y = 120; lx=self.width//2-80; rx=self.width//2+80
-        draw_closed.arc((lx - r, eye_y - r, lx + r, eye_y + r), 200, 340, fill="WHITE", width=8)
-        draw_closed.arc((rx - r, eye_y - r, rx + r, eye_y + r), 200, 340, fill="WHITE", width=8)
+        self._set_servo_pulse(config.SERVO_LEFT_WHEEL_CHANNEL, left_pulse)
+        self._set_servo_pulse(config.SERVO_RIGHT_WHEEL_CHANNEL, right_pulse)
+        print(f"Movement: Left Speed={left_speed}, Right Speed={right_speed}")
 
-        self._display(closed_img); time.sleep(0.15); self._display(open_img)
+    def set_pan(self, angle):
+        """Sets the pan servo angle (-90 to 90)."""
+        pulse = 1500 + (angle * 1000 / 90)
+        self._set_servo_pulse(config.SERVO_PAN_CHANNEL, pulse)
 
-    def animate_sleepy(self):
-        img = self._create_base_image()
-        draw = ImageDraw.Draw(img)
-        r = 50; eye_y = 120; lx=self.width//2-80; rx=self.width//2+80
-        draw.arc((lx - r, eye_y - r, lx + r, eye_y + r), 180, 360, fill="WHITE", width=8)
-        draw.arc((rx - r, eye_y - r, rx + r, eye_y + r), 180, 360, fill="WHITE", width=8)
-        self._display(img)```
-*Save and Exit*
+    def set_tilt(self, angle):
+        """Sets the tilt servo angle (-90 to 90)."""
+        pulse = 1500 - (angle * 1000 / 90) # Inverted for typical setup
+        self._set_servo_pulse(config.SERVO_TILT_CHANNEL, pulse)
 
-### **File 4: `ninja_core.py`** (Heavily Updated)
+    def center_head(self):
+        """Centers the pan and tilt servos."""
+        self.set_pan(0)
+        self.set_tilt(0)
+        print("Movement: Head centered")
+ninja_sensors.pyPython# ninja_sensors.py
+"""
+Manages the robot's sensors: VL6180X ToF and UPS HAT battery monitor.
+"""
+import time
+import config
 
-The core logic is updated to integrate the new face and sensor.
+class SensorManager:
+    def __init__(self, vl6180x_sensor, ups_hat_bus):
+        self.vl6180x = vl6180x_sensor
+        self.ups_bus = ups_hat_bus
+        print("Sensor Manager initialized.")
 
-**Create/overwrite the file:**```bash
-nano ninja_core.py
-```
-**Paste the following code:**
-```python
-# -*- coding:utf-8 -*-
-'''!
-  @file ninja_core.py
-  @brief Core logic for the Ninja Robot with LCD face and ToF sensor.
-  @copyright Copyright (c) 2024
-  @license The MIT License (MIT)
-  @author Assistant
-  @version V2.1
-'''
-import sys, time, re, threading, json
+    def get_distance_mm(self):
+        """Returns the distance measured by the ToF sensor in millimeters."""
+        try:
+            distance = self.vl6180x.range
+            return distance
+        except Exception as e:
+            print(f"Error reading distance sensor: {e}")
+            return -1
+
+    def get_battery_info(self):
+        """
+        Returns a dictionary with battery voltage (mV) and capacity (%).
+        Returns None on error.
+        """
+        try:
+            # The UPS HAT uses I2C direct register reads on its dedicated software bus.
+            bus = self.ups_bus
+            addr = config.UPS_HAT_ADDR
+            
+            # Read Voltage (VCELL register 0x03, 0x04)
+            vcell_h = bus.read_byte_data(addr, 0x03)
+            vcell_l = bus.read_byte_data(addr, 0x04)
+            voltage = (((vcell_h & 0x0F) << 8) + vcell_l) * 1.25  # LSB is 1.25mV
+
+            # Read State of Charge (SOC register 0x05, 0x06)
+            soc_h = bus.read_byte_data(addr, 0x05)
+            soc_l = bus.read_byte_data(addr, 0x06)
+            capacity = (soc_h + (soc_l / 256.0))
+            
+            return {"voltage_mv": round(voltage), "capacity_pct": round(capacity, 2)}
+        except Exception as e:
+            print(f"Error reading battery info from UPS HAT: {e}")
+            return None
+
+ninja_buzzer.pyPython# ninja_buzzer.py
+"""
+Controls the piezo buzzer.
+"""
 import RPi.GPIO as GPIO
+import time
+import config
+
+class BuzzerController:
+    def __init__(self):
+        # The IO HAT mirrors the Pi's GPIO setup for digital pins
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(config.BUZZER_PIN, GPIO.OUT)
+        GPIO.output(config.BUZZER_PIN, GPIO.LOW)
+        print("Buzzer Controller initialized.")
+
+    def beep(self, duration=0.1):
+        """Produces a short beep."""
+        GPIO.output(config.BUZZER_PIN, GPIO.HIGH)
+        time.sleep(duration)
+        GPIO.output(config.BUZZER_PIN, GPIO.LOW)
+
+    def play_tone(self, frequency, duration):
+        """Plays a tone of a specific frequency and duration."""
+        # Simple PWM implementation in software
+        period = 1.0 / frequency
+        delay = period / 2.0
+        cycles = int(duration * frequency)
+        for _ in range(cycles):
+            GPIO.output(config.BUZZER_PIN, GPIO.HIGH)
+            time.sleep(delay)
+            GPIO.output(config.BUZZER_PIN, GPIO.LOW)
+            time.sleep(delay)
+
+5.6. ninja_gemini.py - The AI BrainThis module is updated to interact with the LCDManager to display facial expressions based on keywords found in the AI's response.Python# ninja_gemini.py
+"""
+Handles all interactions with the Google Gemini AI.
+Parses responses to control the robot's facial expressions.
+"""
 import google.generativeai as genai
+import config
+import re
+import time
 
-# --- Configuration ---
-GOOGLE_API_KEY = "PASTE_YOUR_GOOGLE_GEMINI_API_KEY_HERE"
-GEMINI_MODEL_NAME = "gemini-1.5-flash-latest"
-DISTANCE_THRESHOLD_CM = 15.0
+class GeminiInterface:
+    def __init__(self, lcd_manager):
+        if not config.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY not set in config.py or environment variables.")
+        
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        self.model = genai.GenerativeModel(config.GEMINI_MODEL_NAME)
+        self.chat = self.model.start_chat(history=)
+        self.lcd = lcd_manager
+        print("Gemini AI Interface initialized.")
 
-# --- Import Robot Modules ---
-try:
-    import Ninja_Movements_v1 as movements, Ninja_Buzzer as buzzer, Ninja_Distance as distance, Ninja_Face_LCD as face_lcd
-except ImportError as e:
-    print(f"Error importing robot modules: {e}"); sys.exit(1)
+    def _determine_emotion(self, text):
+        """Parses text to determine an appropriate emotional expression."""
+        text_lower = text.lower()
+        if any(word in text_lower for word in ["great", "excellent", "wonderful", "happy", "of course"]):
+            return "happy"
+        if any(word in text_lower for word in ["sorry", "unfortunately", "sadly", "i can't"]):
+            return "sad"
+        # Add more complex emotion detection rules as needed
+        return "neutral" # Default emotion
 
-# --- Global Variables ---
-model, movement_thread, distance_check_thread, buzzer_pwm, face = (None,) * 5
-is_continuous_moving, keep_distance_checking, hardware_initialized = (False,) * 3
+    def send_prompt(self, prompt):
+        """Sends a prompt to Gemini, displays expressions, and returns the response."""
+        print(f"Sending prompt to Gemini: '{prompt}'")
+        
+        # Show 'thinking' face while waiting for response
+        if self.lcd:
+            self.lcd.draw_face("thinking")
 
-# --- Mapping sounds to face expressions ---
-SOUND_TO_FACE_MAP = {
-    "hello": "happy", "thanks": "happy", "yes": "idle", "no": "sad",
-    "danger": "danger", "scared": "danger", "exciting": "happy", "happy": "happy",
-    "sleepy": "sleepy", "left": "idle", "right": "idle"
-}
+        try:
+            response = self.chat.send_message(prompt)
+            response_text = response.text
+            print(f"Gemini response: '{response_text}'")
+            
+            # Determine emotion and show corresponding face
+            if self.lcd:
+                emotion = self._determine_emotion(response_text)
+                self.lcd.draw_face(emotion)
+            
+            return response_text
+        
+        except Exception as e:
+            error_message = f"Error communicating with Gemini: {e}"
+            print(error_message)
+            if self.lcd:
+                self.lcd.draw_face("sad")
+                # Display error on screen after a delay
+                time.sleep(2)
+                self.lcd.draw_text(str(e), font_size=20)
+            return error_message
+5.7. ninja_core.py - The Main ApplicationThis is the main entry point that ties everything together. It initializes all the controllers through the HardwareManager and contains the primary logic loop for the robot's behavior.Python# ninja_core.py
+"""
+Main application logic for the NinjaRobot.
+Initializes all subsystems and runs the main control loop.
+"""
+import time
+from hardware_manager import hw_manager
+from ninja_movement import MovementController
+from ninja_sensors import SensorManager
+from ninja_buzzer import BuzzerController
+from ninja_gemini import GeminiInterface
+import config
 
-def initialize_gemini():
-    global model
-    if model: return True
-    if "PASTE_YOUR" in GOOGLE_API_KEY:
-        print("ERROR: Google Gemini API key not set in ninja_core.py."); return False
-    try:
-        genai.configure(api_key=GOOGLE_API_KEY)
-        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
-        print("Gemini model loaded."); return True
-    except Exception as e:
-        print(f"Error loading Gemini model: {e}"); return False
+class NinjaRobot:
+    def __init__(self):
+        if not hw_manager:
+            print("Hardware Manager failed to initialize. Exiting.")
+            exit()
+            
+        print("Initializing NinjaRobot Core...")
+        self.lcd = hw_manager.lcd
+        self.movement = MovementController(hw_manager.io_board)
+        self.sensors = SensorManager(hw_manager.vl6180x, hw_manager.get_ups_hat_bus())
+        self.buzzer = BuzzerController()
+        self.gemini = GeminiInterface(self.lcd)
+        
+        self.is_running = True
+        self.state = "idle" # Possible states: idle, exploring, interacting
+        print("NinjaRobot Core initialized successfully.")
 
-def initialize_hardware():
-    global buzzer_pwm, face, hardware_initialized
-    if hardware_initialized: return True
-    print("Initializing hardware...")
-    try:
-        lcd = face_lcd.WaveshareLCD(); lcd.init_display()
-        face = face_lcd.RobotFace(lcd); face.show_expression('idle')
-        movements.init_board_and_servo()
-        buzzer.setup(); buzzer_pwm = GPIO.PWM(buzzer.BUZZER_PIN, 440); buzzer_pwm.start(0)
-        distance.setup_sensor()
-        hardware_initialized = True
-        print("Hardware initialized."); movements.reset_servos(); play_robot_sound('hello'); time.sleep(1)
-        return True
-    except Exception as e:
-        print(f"Hardware initialization error: {e}")
-        try: GPIO.cleanup()
-        except: pass
-        return False
+    def startup_sequence(self):
+        """Performs a startup sequence."""
+        print("Performing startup sequence...")
+        self.lcd.draw_face("neutral")
+        self.buzzer.play_tone(440, 0.1)
+        time.sleep(0.1)
+        self.buzzer.play_tone(880, 0.2)
+        self.movement.center_head()
+        time.sleep(1)
+        battery_info = self.sensors.get_battery_info()
+        if battery_info:
+            self.lcd.draw_text(f"NinjaRobot Online\nBattery: {battery_info['capacity_pct']}%", font_size=30)
+        else:
+            self.lcd.draw_text("NinjaRobot Online\nBattery: N/A", font_size=30)
+        time.sleep(3)
+        self.lcd.draw_face("neutral")
 
-def cleanup_all():
-    global keep_distance_checking, movement_thread, is_continuous_moving, hardware_initialized
-    print("\n--- Initiating Cleanup ---")
-    if hardware_initialized: play_robot_sound("sleepy"); time.sleep(1)
-    keep_distance_checking = False
-    if distance_check_thread and distance_check_thread.is_alive(): distance_check_thread.join(0.5)
-    if is_continuous_moving or (movement_thread and movement_thread.is_alive()): movements.stop()
-    if movement_thread and movement_thread.is_alive(): movement_thread.join(1.0)
-    is_continuous_moving = False
-    if hardware_initialized:
-        try: movements.rest()
-        except: pass
-        if face: face.lcd.cleanup()
-        if buzzer_pwm: buzzer_pwm.stop()
-        GPIO.cleanup()
-    hardware_initialized = False; print("Cleanup complete.")
+    def run(self):
+        """The main control loop."""
+        self.startup_sequence()
+        
+        while self.is_running:
+            try:
+                if self.state == "exploring":
+                    self.explore_behavior()
+                else: # idle state
+                    time.sleep(0.1) # Do nothing in idle state for now
+            
+            except KeyboardInterrupt:
+                print("Keyboard interrupt detected. Shutting down.")
+                self.is_running = False
+        
+        self.shutdown_sequence()
 
-def play_robot_sound(sound_keyword):
-    if not hardware_initialized: return
-    expression = SOUND_TO_FACE_MAP.get(sound_keyword.lower(), 'idle')
-    if face: threading.Thread(target=face.show_expression, args=(expression,)).start()
-    
-    sound_action = buzzer.SOUND_MAP.get(sound_keyword.lower())
-    try:
-        if sound_action == buzzer.SOUND_SCARED_IDENTIFIER: buzzer.play_scared_sound(buzzer_pwm)
-        elif sound_action == buzzer.SOUND_EXCITING_IDENTIFIER: buzzer.play_exciting_trill(buzzer_pwm)
-        elif isinstance(sound_action, list): buzzer.play_sequence(buzzer_pwm, sound_action)
-    except Exception as e: print(f"Error playing sound '{sound_keyword}': {e}")
+    def explore_behavior(self):
+        """Simple autonomous exploration behavior."""
+        distance = self.sensors.get_distance_mm()
+        print(f"Distance: {distance} mm")
 
-def distance_checker():
-    global keep_distance_checking, is_continuous_moving
-    print("Distance checker thread started.")
-    while keep_distance_checking:
-        if not is_continuous_moving or movements.stop_movement or not hardware_initialized: break
-        dist_cm = distance.measure_distance()
-        if 0 < dist_cm < DISTANCE_THRESHOLD_CM:
-            print(f"!!! OBSTACLE at {dist_cm:.1f} cm !!!")
-            play_robot_sound('danger')
-            if is_continuous_moving: movements.stop(); is_continuous_moving = False
-            break 
-        time.sleep(0.15)
-    print("Distance checker thread finished."); keep_distance_checking = False
+        if distance!= -1 and distance < config.OBSTACLE_DISTANCE_THRESHOLD_MM:
+            self.movement.stop()
+            self.buzzer.beep()
+            print("Obstacle detected!")
+            
+            # Ask Gemini what to do
+            response = self.gemini.send_prompt("I see an obstacle in front of me. What should I do?")
+            # In a more advanced version, parse the response to take action
+            
+            # For now, just back up and turn
+            self.movement.move(-0.5, -0.5) # Move backward
+            time.sleep(1)
+            self.movement.move(0.5, -0.5) # Turn right
+            time.sleep(1)
+            self.movement.stop()
 
-def process_user_command_with_gemini(command, lang='en-US'):
-    if not model: return {"action_type": "unknown", "error": "Gemini not ready."}
-    prompt = f"""Analyze the command for a robot. Respond in JSON only.
-Is it a general question or a robot command?
-- Question (e.g., 'what is the weather'): {{"action_type": "conversation", "response_text": "your answer"}}.
-- Command: Use keys "action_type", "move_function", "speed", "sound_keyword".
-Functions: 'hello', 'walk', 'stepback', 'run', 'runback', 'turnleft_step', 'turnright_step', 'rotateleft', 'rotateright', 'stop', 'reset_servos', 'rest'.
-Sounds: 'hello', 'thanks', 'no', 'yes', 'danger', 'exciting', 'happy', 'right', 'left', 'scared', 'sleepy'.
-Command: "{command}" -> """
-    try:
-        response = model.generate_content(prompt)
-        match = re.search(r'\{.*\}', response.text, re.DOTALL)
-        if match: return json.loads(match.group(0))
-        return {"action_type": "unknown", "error": f"No JSON in response: {response.text}"}
-    except Exception as e: return {"action_type": "unknown", "error": f"API error: {e}"}
+        else:
+            # Move forward slowly
+            self.movement.move(0.4, 0.4)
+        
+        time.sleep(0.1)
 
-def execute_action(action_data, lang='en-US'):
-    global movement_thread, is_continuous_moving, keep_distance_checking
-    if not hardware_initialized: print("Error: Hardware not ready."); return
-    
-    action_type = action_data.get("action_type", "unknown")
+    def shutdown_sequence(self):
+        """Gracefully shuts down all hardware."""
+        print("Performing shutdown sequence...")
+        self.movement.stop()
+        self.movement.center_head()
+        self.lcd.draw_text("Shutting Down...", font_size=35)
+        self.buzzer.play_tone(880, 0.1)
+        time.sleep(0.1)
+        self.buzzer.play_tone(440, 0.2)
+        time.sleep(1)
+        self.lcd.clear()
+        self.lcd.set_backlight(False)
+        print("Shutdown complete.")
 
-    if action_type == "conversation":
-        print(f"CONVERSATIONAL: {action_data.get('response_text', '...')}")
-        play_robot_sound('yes'); return
-
-    move_func = action_data.get("move_function")
-    if move_func and is_continuous_moving:
-        movements.stop()
-        if movement_thread and movement_thread.is_alive(): movement_thread.join(1.0)
-        is_continuous_moving = False; time.sleep(0.2)
-    
-    if action_data.get("sound_keyword"):
-        play_robot_sound(action_data["sound_keyword"])
-        if move_func: time.sleep(0.3)
-
-    if move_func:
-        target_func = getattr(movements, move_func, None)
-        if target_func:
-            speed = action_data.get("speed", "normal")
-            is_continuous = move_func in ["walk", "run", "stepback", "runback", "rotateleft", "rotateright"]
-            if is_continuous:
-                is_continuous_moving = True; movements.stop_movement = False
-                movement_thread = threading.Thread(target=target_func, args=(speed, None), daemon=True); movement_thread.start()
-                if move_func in ["walk", "run"]:
-                    keep_distance_checking = True
-                    distance_check_thread = threading.Thread(target=distance_checker, daemon=True); distance_check_thread.start()
-            elif move_func == "stop": movements.stop(); is_continuous_moving = False
-            else: target_func()
-        else: print(f"Error: Func '{move_func}' not found."); play_robot_sound('no')
-    
-    if action_type == "unknown": play_robot_sound('no')
-
-def get_robot_status():
-    if not hardware_initialized: return "Hardware Offline"
-    return "Moving..." if is_continuous_moving else "Idle"
-
-# Main test block
 if __name__ == "__main__":
-    if not initialize_gemini() or not initialize_hardware():
-        sys.exit("System initialization failed.")
+    robot = NinjaRobot()
+    # To start autonomous behavior, set the state
+    # robot.state = "exploring" 
     try:
-        while True:
-            cmd = input("🎤> ").strip()
-            if cmd.lower() in ["exit", "quit"]: break
-            if cmd: execute_action(process_user_command_with_gemini(cmd))
-    except KeyboardInterrupt: print("\nCtrl+C detected.")
-    finally: cleanup_all()
-```
-*Save and Exit*
+        robot.run()
+    except Exception as e:
+        print(f"An error occurred in the main loop: {e}")
+        robot.shutdown_sequence()
 
-### **Remaining Files (Unchanged)**
+5.8. web_interface.py and templates/index.htmlThe Flask web interface is updated to display the new sensor data and provide a simple form for interacting with the Gemini AI.web_interface.pyPython# web_interface.py
+from flask import Flask, render_template, request, jsonify
+import threading
+import time
 
-The following files from your original upload do not require any changes:
+# This must be done before importing NinjaRobot
+# to avoid circular import issues if robot is started here.
+app = Flask(__name__)
 
-*   `Ninja_Movements_v1.py`
-*   `Ninja_Buzzer.py`
-*   `web_interface.py`
-*   `templates/index.html`
+# Lazy load the robot to avoid starting hardware on module import
+robot_instance = None
+robot_thread = None
 
-Ensure your Gemini API key is pasted into `ninja_core.py`.
+def get_robot():
+    global robot_instance
+    if robot_instance is None:
+        from ninja_core import NinjaRobot
+        robot_instance = NinjaRobot()
+    return robot_instance
 
----
+def robot_thread_func():
+    robot = get_robot()
+    # Set the robot to a passive state for web control
+    robot.state = "idle"
+    robot.run()
 
-## **6. Running the Application**
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-1.  **Activate Environment:**
-    ```bash
-    cd ~/NinjaRobot
-    source .venv/bin/activate
-    ```
-2.  **Find Pi's IP Address:**
-    ```bash
-    hostname -I | awk '{print $1}'
-    ```
-3.  **Start the Web Server:**
-    ```bash
-    python3 web_interface.py
-    ```
-    *The LCD screen will light up and display the robot's idle face. The terminal will show initialization messages.*
+@app.route('/api/status', methods=)
+def get_status():
+    """API endpoint to get real-time sensor data."""
+    robot = get_robot()
+    distance = robot.sensors.get_distance_mm()
+    battery = robot.sensors.get_battery_info()
+    status = {
+        'distance_mm': distance,
+        'battery_voltage_mv': battery['voltage_mv'] if battery else 'N/A',
+        'battery_capacity_pct': battery['capacity_pct'] if battery else 'N/A',
+        'robot_state': robot.state
+    }
+    return jsonify(status)
 
-4.  **Access Web Interface:** On another device on the same WiFi network, open a browser and go to:
-    `http://<YOUR_PI_IP_ADDRESS>:5000`
+@app.route('/api/move', methods=)
+def move():
+    """API endpoint to control movement."""
+    robot = get_robot()
+    data = request.json
+    direction = data.get('direction')
+    
+    if direction == 'forward':
+        robot.movement.move(0.5, 0.5)
+    elif direction == 'backward':
+        robot.movement.move(-0.5, -0.5)
+    elif direction == 'left':
+        robot.movement.move(-0.5, 0.5)
+    elif direction == 'right':
+        robot.movement.move(0.5, -0.5)
+    elif direction == 'stop':
+        robot.movement.stop()
+    
+    return jsonify({'status': 'ok', 'action': direction})
 
----
+@app.route('/api/gemini', methods=)
+def gemini_prompt():
+    """API endpoint to send a prompt to Gemini."""
+    robot = get_robot()
+    data = request.json
+    prompt = data.get('prompt')
+    if not prompt:
+        return jsonify({'error': 'Prompt cannot be empty'}), 400
+    
+    response = robot.gemini.send_prompt(prompt)
+    return jsonify({'response': response})
 
-## **7. Using the Interface**
+if __name__ == '__main__':
+    # Start the robot thread only when the web server is run directly
+    robot_thread = threading.Thread(target=robot_thread_func, daemon=True)
+    robot_thread.start()
+    # Note: For production, use a proper WSGI server like Gunicorn
+    app.run(host='0.0.0.0', port=5000)
 
-The interface functions as before, but now with enhanced feedback from the robot's new components.
+templates/index.htmlHTML<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NinjaRobot Control</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; background: #222; color: #eee; }
+      .container { max-width: 800px; margin: auto; }
+      .status,.controls,.gemini { background: #333; padding: 1em; border-radius: 8px; margin-bottom: 1em; }
+        h1, h2 { color: #00aaff; }
+        button { padding: 0.8em 1.2em; margin: 0.5em; border: none; border-radius: 5px; background: #0077cc; color: white; cursor: pointer; font-size: 1em; }
+        button:active { background: #0055aa; }
+        #prompt { width: 70%; padding: 0.8em; }
+        #gemini-response { background: #444; padding: 1em; margin-top: 1em; border-radius: 5px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NinjaRobot Control Interface</h1>
 
-*   **LCD Face:** The robot's face will change expression to match the sound or action being performed (e.g., happy for "hello," angry for "danger," sleepy for "rest"). It will blink periodically when idle.
-*   **Distance Sensor:** When the robot is moving forward (`walk` or `run`), it will now automatically stop and play a "danger" sound if it detects an obstacle closer than 15 cm.
+        <div class="status">
+            <h2>Live Status</h2>
+            <p><strong>Distance:</strong> <span id="distance">--</span> mm</p>
+            <p><strong>Battery:</strong> <span id="battery">--</span> % (<span id="voltage">--</span> mV)</p>
+            <p><strong>State:</strong> <span id="state">--</span></p>
+        </div>
 
----
+        <div class="controls">
+            <h2>Movement Controls</h2>
+            <button onmousedown="move('forward')" onmouseup="move('stop')">Forward</button>
+            <br>
+            <button onmousedown="move('left')" onmouseup="move('stop')">Left</button>
+            <button onclick="move('stop')">STOP</button>
+            <button onmousedown="move('right')" onmouseup="move('stop')">Right</button>
+            <br>
+            <button onmousedown="move('backward')" onmouseup="move('stop')">Backward</button>
+        </div>
 
-## **8. Troubleshooting**
+        <div class="gemini">
+            <h2>Gemini AI Interaction</h2>
+            <input type="text" id="prompt" placeholder="Ask Gemini a question...">
+            <button onclick="sendPrompt()">Send</button>
+            <div id="gemini-response">AI response will appear here...</div>
+        </div>
+    </div>
 
-*   **LCD Not Working:**
-    *   **Check wiring carefully!** `DC`->`D25`, `RST`->`D17`, `BL`->`D24`. Also check the `SPI` header connections (`MOSI`, `SCK`, `CS`).
-    *   Ensure SPI is enabled (`sudo raspi-config`).
-*   **Distance Sensor Error / `i2cdetect` fails:**
-    *   Check the 4 wires are correctly plugged into the dedicated `I2C` header on the HAT.
-    *   Ensure I2C is enabled (`sudo raspi-config`).
-*   **`ModuleNotFoundError`:**
-    *   Make sure your virtual environment is active (`source .venv/bin/activate`).
-    *   Ensure all libraries from Step 4.9 were installed successfully.
-*   **AI Errors / API Key Issues:**
-    *   Make sure you have pasted your correct Google Gemini API key into `ninja_core.py`.
-*   **Robot movement is erratic:**
-    *   Check that your power supply is at least 5V, 2.5A. The LCD adds to the power draw.
-    *   Verify the 360° and 180° servos are connected to the correct `S0-S3` ports.
+    <script>
+        function updateStatus() {
+            fetch('/api/status')
+              .then(response => response.json())
+              .then(data => {
+                    document.getElementById('distance').innerText = data.distance_mm;
+                    document.getElementById('battery').innerText = data.battery_capacity_pct;
+                    document.getElementById('voltage').innerText = data.battery_voltage_mv;
+                    document.getElementById('state').innerText = data.robot_state;
+                });
+        }
+
+        function move(direction) {
+            fetch('/api/move', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ direction: direction })
+            });
+        }
+
+        function sendPrompt() {
+            const promptText = document.getElementById('prompt').value;
+            const responseDiv = document.getElementById('gemini-response');
+            responseDiv.innerText = 'Thinking...';
+            fetch('/api/gemini', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: promptText })
+            })
+          .then(response => response.json())
+          .then(data => {
+                responseDiv.innerText = data.response |
+
+| data.error;
+            });
+        }
+
+        setInterval(updateStatus, 1000); // Update status every second
+        window.onload = updateStatus;
+    </script>
+</body>
+</html>
+Part 6: System Operation and Functional WalkthroughThis section provides operational instructions for the fully assembled and configured NinjaRobot.6.1. Launching the Robot's SoftwareThere are two primary methods for running the robot's software: manual execution for development and an automated service for deployment.Manual Execution (for Development)Power on the robot.Connect to the Raspberry Pi via SSH.Navigate to the project directory: cd /path/to/NinjaRobot/.Ensure your Gemini API key is set as an environment variable:Bashexport GOOGLE_API_KEY='YOUR_API_KEY'
+Run the main web interface script. This will also start the robot's core logic in a background thread.Bashpython3 web_interface.py
+The robot is now active. You can interact with it via the web interface. To stop the application, press Ctrl+C in the terminal.Automated Service (for Deployment)For the robot to start automatically on boot, a systemd service is the standard and most robust method.Create a service file:Bashsudo nano /etc/systemd/system/ninjarobot.service
+Paste the following content into the file. Modify the paths and username (pi) to match your setup.Ini, TOML[Unit]
+Description=NinjaRobot Core Service
+After=network.target
+
+
+ExecStart=/usr/bin/python3 /home/pi/NinjaRobot/web_interface.py
+WorkingDirectory=/home/pi/NinjaRobot
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+Environment="GOOGLE_API_KEY=YOUR_API_KEY"
+
+[Install]
+WantedBy=multi-user.target
+Save and exit the editor (Ctrl+X, Y, Enter).Reload the systemd daemon, enable the service to start on boot, and start it immediately:Bashsudo systemctl daemon-reload
+sudo systemctl enable ninjarobot.service
+sudo systemctl start ninjarobot.service
+You can check the status of the service at any time with sudo systemctl status ninjarobot.service.6.2. Using the Web InterfaceWith the software running, open a web browser on a device connected to the same network as the robot and navigate to http://<robot_ip_address>:5000.Live Status: This panel provides a real-time view of the robot's distance sensor reading, battery level, and current operational state.Movement Controls: These buttons allow for direct manual control of the robot's movement. Press and hold a direction button to move; release to stop.Gemini AI Interaction: Type a question or command into the text box and click "Send." The robot's "thinking" face will appear on its LCD, followed by a response face (happy, sad, neutral) and the text response from the AI will be displayed in the box below.6.3. Example Use Cases and DemonstrationsThe upgraded platform enables several new interactive behaviors.Autonomous Obstacle Avoidance:To see this in action, modify the ninja_core.py main execution block to set the initial state to "exploring" and run it manually (python3 ninja_core.py). The robot will move forward until the VL6180X sensor detects an object within the 80mm threshold. It will then stop, beep, ask Gemini for advice (displaying the interaction on its face), and then execute a simple backup-and-turn maneuver before continuing.AI-Powered Interaction:Using the web interface, ask the robot a question like, "What is the capital of France?" The robot's LCD will show the thinking.png face. After a moment, Gemini's response ("The capital of France is Paris.") will appear in the web UI, and the robot's face will change to happy.png because the response contains positive keywords. If you ask something it cannot do, like "Tell me a secret you don't know," its response may trigger the sad.png face.Part 7: Expert Recommendations and Future TrajectoryThe upgraded NinjaRobot is a significantly more capable platform. The following recommendations suggest avenues for future development that leverage the full potential of the integrated hardware and software.7.1. Leveraging Untapped Hardware CapabilitiesAmbient Light Sensing: The VL6180X sensor includes an ambient light sensor (ALS) that is not currently used.13 This data can be easily read using the Adafruit library. A future enhancement could be to implement light-sensitive behaviors. For example, if the ambient light drops below a certain lux value, the robot could automatically display a "sleepy" face and enter a low-power "idle" state.Intelligent Power Management: The code to read battery voltage and percentage from the UPS HAT is in place.6 This can be expanded into a full power management system. A "low-battery" state could be triggered below 20% capacity, causing the robot to display a "tired" face, reduce motor speed to conserve power, and actively announce its need to be charged. A safe shutdown could be automatically initiated if the battery level drops below 5%.Analog Sensor Integration: The DFRobot IO Expansion HAT features four analog input ports that are currently unused.9 These are ideal for integrating analog sensors such as potentiometers for fine-grained manual control of the pan/tilt head, photoresistors (LDRs) for simple line-following, or sound sensors to react to loud noises.7.2. Advanced Software and AI EnhancementsFormal State Machine: The current if/else logic for managing states (idle, exploring) is functional but brittle. Implementing a formal state machine library (e.g., transitions) would create a more robust and scalable behavior management system. This would allow for clearly defined states (e.g., IDLE, EXPLORING, INTERACTING, CHARGING, AVOIDING) and the explicit events that trigger transitions between them.Multi-Modal AI with Vision: The most significant future upgrade would be the addition of a Raspberry Pi Camera. By integrating vision, the robot could capture images of its environment and send them to a multi-modal AI model like Gemini. This would transform its capabilities, allowing it to answer questions like, "What object is in front of me?" or "Describe the room you are in." This would combine its distance data with rich visual context for unparalleled environmental understanding.Improved Mobility Algorithms: The current movement control for the 360° servos is basic. Implementing a more sophisticated differential drive kinematic model would allow for more precise control over the robot's velocity and turning radius. This would enable more complex maneuvers, such as arcing turns and rotating in place with higher accuracy. Libraries like gpiozero contain a Robot class that can simplify the implementation of such a model.7.3. Concluding RemarksThe integration of the SPI LCD and VL6180X ToF sensor, combined with the software-based resolution of the I2C address conflict, successfully elevates the NinjaRobot from a basic robotics kit to a sophisticated platform for advanced STEAM education. The refactored, modular codebase provides a stable and extensible foundation for future experimentation. By enabling visual feedback, precise environmental sensing, and emotionally expressive AI interaction, the upgraded NinjaRobot is now a powerful tool poised to explore more complex concepts in robotics, computer science, and artificial intelligence.
