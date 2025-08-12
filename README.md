@@ -140,23 +140,39 @@ This setup process can be time-consuming on a Pi Zero. Be patient and ensure a s
     ```
 
 6.  **Install Rust Compiler:** Required by a Gemini library dependency. **This step can take over an hour.**
+    Some Python libraries (like `pydantic-core`, a dependency for `google-generativeai`) require a Rust compiler. We'll use `rustup` to install the latest version.
+    **This step will take a considerable amount of time (30 mins to 1+ hour).**
     ```bash
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     ```
-    *   Choose option `1) Proceed with installation (default)`.
-    *   After installation, configure your shell:
+    *   When prompted, choose `1) Proceed with installation (default)`.
+    *   After installation, configure your current shell:
         ```bash
         source "$HOME/.cargo/env"
+        ```
+    *   To make it permanent for future sessions, add it to your `.bashrc`:
+        ```bash
         echo 'source "$HOME/.cargo/env"' >> ~/.bashrc
         ```
-
+    *   Verify the installation (close and reopen terminal, or `source ~/.bashrc`):
+        ```bash
+        rustc --version
+        cargo --version
+        ```
+        You should see version numbers (e.g., `rustc 1.7X.X ...`).
 7.  **Increase Swap Space (Crucial):**
+    Compiling some Python packages (especially those with Rust components) is memory-intensive and can fail on the Pi Zero's limited RAM. We'll temporarily increase swap space.
     ```bash
-    sudo dphys-swapfile swapoff
-    sudo sed -i 's/CONF_SWAPSIZE=100/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
+    echo "CONF_SWAPSIZE=1024" | sudo tee /etc/dphys-swapfile # Sets swap to 1GB
+    # For 2GB swap (if your SD card is large enough and you encounter issues with 1GB):
+    # echo "CONF_SWAPSIZE=2048" | sudo tee /etc/dphys-swapfile
     sudo dphys-swapfile setup
     sudo dphys-swapfile swapon
     ```
+    *   Verify swap (look for total swap around 1G or 2G):
+        ```bash
+        free -h
+        ```
 
 8.  **Create Project & Virtual Environment:**
     ```bash
