@@ -185,7 +185,7 @@ This setup process can be time-consuming on a Pi Zero. Be patient and ensure a s
 9.  **Install Python Libraries:** **This step will also take a very long time.**
     ```bash
     pip install --upgrade pip
-    pip install RPi.GPIO spidev smbus2 Pillow numpy
+    pip install RPi.GPIO spidev Pillow numpy smbus smbus2 # For I2C communication, important for DFRobot HAT. Try smbus if smbus2 does not work
     pip install google-generativeai SpeechRecognition gTTS pygame Flask google-cloud-speech
     ```
 
