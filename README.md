@@ -236,3 +236,305 @@ We will now create a dedicated folder for the robot's code and a virtual environ
     *   Reverting the swap space protects the microSD card from excessive writing, extending its lifespan.
 
 Your NinjaRobot's software environment is now fully configured and ready for the next stage: integrating the new code modules.
+
+Excellent. This is a logical and crucial next step. Creating a robust, general-purpose calibration tool is fundamental to building reliable and complex movements later. Referencing `ExpressiveRobot.md` for the calibration *process* is a great idea.
+
+
+### Servo Initialization and Calibration
+
+1.  **Hardware Interaction:** The DFRobot IO Expansion HAT is the intermediary for all servo control. Therefore, we must use the `DFRobot_RaspberryPi_Expansion_Board` Python library, specifically its `Servo` class. This class takes a pin number (0-15) and an "angle" value (0-180) to control the PWM signal. Our script will manipulate this "angle" value, which is essentially the raw data sent to the servo controller.
+
+2.  **User Interface:** To create the real-time, key-press-driven interface described in your request, we will use Python's built-in `curses` library. This is the standard tool for creating sophisticated text-based user interfaces (TUIs) in a terminal, allowing us to capture single key presses without the user needing to hit "Enter."
+
+3.  **Data Persistence:** The calibration data will be stored in a `servo_calibration.json` file. This file will act as a "translation layer" for all future movement scripts. For example, when a future script wants to move the "right thigh" to `-90` degrees, it will look up the calibrated raw value (e.g., `25`) in this JSON file and send that to the DFRobot HAT.
+
+4.  **General-Purpose Design:** The script is designed to be highly flexible. By asking the user to define their servos at the start, it's not hard-coded to a specific robot build. This makes it reusable for future projects with different servo configurations.
+
+---
+
+### Step-by-Step Instructions
+
+1.  **Navigate to Your Project Directory:** Connect to your Raspberry Pi via SSH and navigate to the project folder. Make sure your virtual environment is active.
+    ```bash
+    cd ~/NinjaRobot
+    source .venv/bin/activate
+    ```
+
+2.  **Get the DFRobot Library:** The `DFRobot_RaspberryPi_Expansion_Board` library is not on `pip`. We need to download it directly into our project folder from its source.
+    ```bash
+    git clone https://github.com/DFRobot/DFRobot_RaspberryPi_Expansion_Board.git
+    # Now, copy the necessary library file into your main project directory
+    cp -r DFRobot_RaspberryPi_Expansion_Board/python/DFRobot_RaspberryPi_Expansion_Board .
+    ```    *This ensures that `import DFRobot_RaspberryPi_Expansion_Board` will work in your scripts.*
+
+3.  **Create the Script File:** Create a new Python file named `ninja_servo_init.py`.
+    ```bash
+    nano ninja_servo_init.py
+    ```
+
+4.  **Copy and Paste the Code:** Copy the entire Python code block below and paste it into the `nano` editor.
+
+5.  **Save and Exit:** Press `Ctrl+X`, then `Y`, then `Enter` to save the file.
+
+6.  **Run the Script:** Execute the script from your terminal.
+    ```bash
+    python3 ninja_servo_init.py
+    ```
+
+7.  **Follow the On-Screen Instructions:**
+    *   First, you'll be prompted to define your servos one by one. Use the format `name,pin,type`. For example:
+        *   `rt0,0,180` (A 180° servo named `rt0` on pin 0 for the right thigh)
+        *   `lf3,3,180` (A 180° servo named `lf3` on pin 3 for the left foot)
+        *   `rw2,2,360` (A 360° servo named `rw2` on pin 2 for the right wheel)
+        *   Type `done` when you have added all your servos.
+    *   Next, the calibration screen will appear for your first servo. Use the keys as instructed on-screen (`w`/`s`, `Shift+X`/`C`/`V`) to find and set the calibration points.
+    *   Press `n` to move to the next servo in your list.
+    *   Press `q` at any time to save all progress and quit the application. The `servo_calibration.json` file will be created or updated in your project directory.
+
+---
+
+### Complete Code for `ninja_servo_init.py`
+
+```python
+# -*- coding: utf-8 -*-
+"""
+ninja_servo_init.py
+
+A general-purpose servo calibration tool for the NinjaRobot project.
+This script allows users to:
+1. Define a custom set of servos with names, pins, and types (180/360).
+2. Interactively calibrate the minimum, center, and maximum positions for each servo.
+3. Save the calibration data to a 'servo_calibration.json' file for use by other scripts.
+
+This script uses the DFRobot_RaspberryPi_Expansion_Board library and the curses library
+for a real-time text-based user interface (TUI).
+
+Author: Your Name/Assistant
+Date: 2024-05-25
+Version: 1.0
+"""
+import time
+import json
+import os
+import curses
+
+# Attempt to import the DFRobot library
+try:
+    from DFRobot_RaspberryPi_Expansion_Board import DFRobot_Expansion_Board_IIC as Board
+    from DFRobot_RaspberryPi_Expansion_Board import DFRobot_Expansion_Board_Servo as Servo
+except ImportError:
+    print("Error: DFRobot library not found.")
+    print("Please ensure the 'DFRobot_RaspberryPi_Expansion_Board' directory is in your project folder.")
+    exit()
+
+# --- Global Variables ---
+CALIBRATION_FILE = 'servo_calibration.json'
+board = None
+servo = None
+servos_to_calibrate = []
+
+def init_hardware():
+    """Initializes the DFRobot Expansion Board and Servo controller."""
+    global board, servo
+    # Initialize the board with I2C bus 1 and address 0x10
+    board = Board(1, 0x10)
+    while board.begin() != board.STA_OK:
+        print("Error: DFRobot Board connection failed. Check wiring and I2C.")
+        print("Retrying in 3 seconds...")
+        time.sleep(3)
+    print("DFRobot Board connection successful.")
+
+    # Initialize the servo controller from the board
+    servo = Servo(board)
+    servo.begin()
+    print("Servo controller initialized.")
+
+def load_calibration_data():
+    """Loads existing calibration data from the JSON file if it exists."""
+    if os.path.exists(CALIBRATION_FILE):
+        with open(CALIBRATION_FILE, 'r') as f:
+            print(f"Loaded existing data from {CALIBRATION_FILE}")
+            return json.load(f)
+    return {}
+
+def save_calibration_data(data):
+    """Saves the calibration data to the JSON file."""
+    with open(CALIBRATION_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
+    print(f"\nCalibration data saved successfully to {CALIBRATION_FILE}")
+
+def get_servo_setup_from_user():
+    """
+    Interactively prompts the user to define the servos they want to calibrate.
+    This runs before the curses TUI starts.
+    """
+    global servos_to_calibrate
+    print("\n--- Ninja Robot Servo Setup ---")
+    print("Please define the servos you want to calibrate.")
+    print("Use the format: name,pin,type")
+    print("  - 'name': A unique name for the servo (e.g., 'right_thigh', 'rt0').")
+    print("  - 'pin': The PWM pin number on the HAT (0-15).")
+    print("  - 'type': The servo type, either '180' or '360'.")
+    print("Example: rt0,0,180")
+    print("Type 'done' when you have finished adding servos.\n")
+
+    while True:
+        user_input = input(f"Define servo #{len(servos_to_calibrate) + 1} (or type 'done'): ").strip().lower()
+        if user_input == 'done':
+            if not servos_to_calibrate:
+                print("No servos defined. Exiting.")
+                return False
+            print("\nServo setup complete. Proceeding to calibration...")
+            time.sleep(1)
+            return True
+        
+        try:
+            name, pin_str, type_str = user_input.split(',')
+            pin = int(pin_str)
+            servo_type = int(type_str)
+
+            if not (0 <= pin <= 15):
+                print("Error: Pin must be between 0 and 15.")
+                continue
+            if servo_type not in [180, 360]:
+                print("Error: Type must be either 180 or 360.")
+                continue
+            
+            # Check for duplicate names or pins
+            if any(s['name'] == name for s in servos_to_calibrate):
+                print(f"Error: Servo name '{name}' is already in use.")
+                continue
+            if any(s['pin'] == pin for s in servos_to_calibrate):
+                print(f"Error: Pin {pin} is already in use.")
+                continue
+
+            servos_to_calibrate.append({'name': name, 'pin': pin, 'type': servo_type})
+            print(f"  -> Added '{name}' (Pin: {pin}, Type: {servo_type}°)")
+
+        except ValueError:
+            print("Invalid format. Please use: name,pin,type (e.g., lf3,3,180)")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+
+def draw_ui(stdscr, servo_info, cal_data, current_value):
+    """Renders the Text-based User Interface using curses."""
+    stdscr.clear()
+    h, w = stdscr.getmaxyx() # Get screen height and width
+
+    name = servo_info['name']
+    pin = servo_info['pin']
+    stype = servo_info['type']
+    
+    # --- Title and Servo Info ---
+    title = f"--- Calibrating Servo: '{name}' (Pin: {pin}, Type: {stype}°) ---"
+    stdscr.addstr(0, (w - len(title)) // 2, title, curses.A_BOLD)
+
+    # --- Current Value Display ---
+    val_str = f"Current Raw Value: {current_value}"
+    stdscr.addstr(3, 2, val_str, curses.A_REVERSE)
+
+    # --- Saved Calibration Points Display ---
+    stdscr.addstr(5, 2, "Saved Points:", curses.A_UNDERLINE)
+    s_data = cal_data.get(name, {})
+    if stype == 180:
+        min_label, center_label, max_label = "-90° (Min)", "0° (Center)", "+90° (Max)"
+        min_key, center_key, max_key = "min", "center", "max"
+    else: # 360
+        min_label, center_label, max_label = "CCW Max (-90)", "Stop (0)", "CW Max (+90)"
+        min_key, center_key, max_key = "ccw_max", "stop", "cw_max"
+
+    stdscr.addstr(6, 4, f"{min_label}:    {s_data.get(min_key, 'Not Set')}")
+    stdscr.addstr(7, 4, f"{center_label}: {s_data.get(center_key, 'Not Set')}")
+    stdscr.addstr(8, 4, f"{max_label}:    {s_data.get(max_key, 'Not Set')}")
+
+    # --- Instructions ---
+    stdscr.addstr(h - 6, 2, "Controls:", curses.A_UNDERLINE)
+    stdscr.addstr(h - 5, 4, "'w' / 's' : Adjust value up / down by 1.")
+    stdscr.addstr(h - 4, 4, f"'Shift+X' : Set current value as {min_label}.")
+    stdscr.addstr(h - 3, 4, f"'Shift+C' : Set current value as {center_label}.")
+    stdscr.addstr(h - 2, 4, f"'Shift+V' : Set current value as {max_label}.")
+    stdscr.addstr(h - 1, 4, "'n': Next Servo | 'q': Save & Quit", curses.A_BOLD)
+    
+    stdscr.refresh()
+
+def calibration_loop(stdscr, servo_info, calibration_data):
+    """Main interactive loop for calibrating a single servo."""
+    name = servo_info['name']
+    pin = servo_info['pin']
+    stype = servo_info['type']
+    
+    # Initialize calibration data for this servo if it doesn't exist
+    if name not in calibration_data:
+        calibration_data[name] = {'pin': pin, 'type': stype}
+    
+    # Start at the center value if it exists, otherwise default to 90
+    current_value = calibration_data[name].get('center', 90)
+    if stype == 360:
+        current_value = calibration_data[name].get('stop', 90)
+    
+    # Move servo to initial position
+    servo.move(pin, current_value)
+
+    while True:
+        draw_ui(stdscr, servo_info, calibration_data, current_value)
+        key = stdscr.getkey()
+
+        if key == 'w':
+            current_value = min(180, current_value + 1)
+        elif key == 's':
+            current_value = max(0, current_value - 1)
+        elif key == 'X': # Shift+X
+            key_name = "min" if stype == 180 else "ccw_max"
+            calibration_data[name][key_name] = current_value
+        elif key == 'C': # Shift+C
+            key_name = "center" if stype == 180 else "stop"
+            calibration_data[name][key_name] = current_value
+        elif key == 'V': # Shift+V
+            key_name = "max" if stype == 180 else "cw_max"
+            calibration_data[name][key_name] = current_value
+        elif key == 'n':
+            # Stop this servo before moving to the next
+            center_val = calibration_data[name].get('center' if stype == 180 else 'stop', 90)
+            servo.move(pin, center_val)
+            return 'next'
+        elif key == 'q':
+            # Stop this servo before quitting
+            center_val = calibration_data[name].get('center' if stype == 180 else 'stop', 90)
+            servo.move(pin, center_val)
+            return 'quit'
+
+        # Update servo position after any change
+        servo.move(pin, current_value)
+
+def main(stdscr):
+    """The main function wrapped by curses."""
+    # Curses setup
+    curses.curs_set(0)  # Hide the cursor
+    stdscr.nodelay(False) # Wait for user input
+    stdscr.timeout(-1)
+
+    calibration_data = load_calibration_data()
+
+    for servo_info in servos_to_calibrate:
+        result = calibration_loop(stdscr, servo_info, calibration_data)
+        if result == 'quit':
+            break
+            
+    # Save data at the end
+    save_calibration_data(calibration_data)
+
+if __name__ == "__main__":
+    try:
+        # Get user input for which servos to set up FIRST
+        if get_servo_setup_from_user():
+            # If servos were defined, initialize hardware and start curses UI
+            init_hardware()
+            curses.wrapper(main)
+    except KeyboardInterrupt:
+        print("\nProgram interrupted by user. Exiting.")
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {e}")
+        import traceback
+        traceback.print_exc()
+
+```
