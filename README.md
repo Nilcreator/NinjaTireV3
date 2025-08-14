@@ -171,7 +171,7 @@ Next, we install system-level libraries that our Python packages will depend on.
     ```bash
     # Set swap to 1GB (1024MB)
     sudo dphys-swapfile swapoff
-    echo "CONF_SWAPSIZE=1024" | sudo tee /etc/dphys-swapfile
+    echo "CONF_SWAPSIZE=2048" | sudo tee /etc/dphys-swapfile
     sudo dphys-swapfile setup
     sudo dphys-swapfile swapon
     ```
@@ -207,7 +207,7 @@ We will now create a dedicated folder for the robot's code and a virtual environ
 3.  **Install All Python Libraries:** This single command will install everything needed for the upgraded robot: Gemini, FastAPI, the new hardware, and legacy components. **This step will also take a very long time (1-2+ hours).**
     ```bash
     pip install --upgrade pip
-    pip install smbus smbus2 RPi.GPIO Pillow numpy spidev google-generativeai SpeechRecognition gTTS pygame google-cloud-speech "fastapi[all]" "uvicorn[standard]" # For I2C communication, important for DFRobot HAT. Try smbus if smbus2 does not work
+    pip install smbus smbus2 RPi.GPIO Pillow numpy spidev google-generativeai SpeechRecognition gTTS pygame google-cloud-speech fastapi "uvicorn[standard]" # For I2C communication, important for DFRobot HAT. Try smbus if smbus2 does not work
     ```
 
 4.  **Revert Swap Space:** After the intensive installation is done, we'll return the swap space to its default size to reduce wear on the SD card.
